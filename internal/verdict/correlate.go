@@ -38,7 +38,36 @@ func timeOf(a collector.Artifact) (time.Time, bool) {
 		}
 		return p.Timestamp, true
 
-	case "eventlog.session_timeline", "eventlog.log_cleared":
+	case "eventlog.session_timeline", "eventlog.log_cleared", "eventlog.time_changed":
+		var p struct {
+			Time time.Time `json:"time"`
+		}
+		if err := json.Unmarshal(a.Data, &p); err != nil || p.Time.IsZero() {
+			return time.Time{}, false
+		}
+		return p.Time, true
+
+	case "bam":
+		var p struct {
+			LastExecution time.Time `json:"lastExecution"`
+		}
+		if err := json.Unmarshal(a.Data, &p); err != nil || p.LastExecution.IsZero() {
+			return time.Time{}, false
+		}
+		return p.LastExecution, true
+
+	case "prefetch":
+		// El primer LastRunTimes es la ejecución más reciente.
+		var p struct {
+			LastRunTimes []time.Time
+		}
+		if err := json.Unmarshal(a.Data, &p); err != nil || len(p.LastRunTimes) == 0 || p.LastRunTimes[0].IsZero() {
+			return time.Time{}, false
+		}
+		return p.LastRunTimes[0], true
+
+	case "process", "emulator.macro", "autorun", "startup_entry":
+		// Colectores de Fase 8: serializan con tags json en minúscula.
 		var p struct {
 			Time time.Time `json:"time"`
 		}

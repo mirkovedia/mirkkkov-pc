@@ -155,8 +155,10 @@ func TestEscalateTaskNoRegisterLogIsInfo(t *testing.T) {
 	}
 }
 
+// service_no_install_log dejó de estar acá en Fase 8: es la misma situación
+// que task_no_register_log (el log rotó) y ver calibration_test.go.
 func TestEscalateOtherDesyncKindsStayMedium(t *testing.T) {
-	for _, kind := range []string{"service_no_install_log", "service_installed_then_removed", "task_delete_desync"} {
+	for _, kind := range []string{"service_installed_then_removed", "task_delete_desync"} {
 		a := art("eventlog.desync", "X", map[string]string{"Kind": kind})
 		got := escalate(a, ruleFor("eventlog.desync"))
 		if got.Severity != SevMedium {

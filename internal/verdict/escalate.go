@@ -3,10 +3,12 @@ package verdict
 
 import (
 	"encoding/json"
+	"regexp"
 	"strings"
 
 	"github.com/mirkovedia/mirkkkov-pc/internal/collector"
 	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/fsforensic"
+	winservices "github.com/mirkovedia/mirkkkov-pc/internal/winfs/services"
 )
 
 // suspiciousConfidence es la confianza que se fija cuando el nombre del
@@ -111,7 +113,7 @@ func desyncTaskRule(a collector.Artifact, r Rule) Rule {
 	}
 	switch payload.Kind {
 	case "hive_only":
-		if strings.HasPrefix(strings.ToLower(payload.RelPath), `microsoft\`) {
+		if strings.HasPrefix(strings.ToLower(payload.RelPath), `microsoft\`) || isWindowsManagedRootTask(payload.RelPath) {
 			// Windows guarda varias de sus tareas propias SOLO en el
 			// registro, sin XML en disco. Se verificó sobre una máquina real:
 			// el escaneo enumeró el árbol completo sin un solo error de
@@ -136,7 +138,56 @@ func desyncTaskRule(a collector.Artifact, r Rule) Rule {
 	return r
 }
 
-// eventDesyncRule baja a INFO la única dirección que no puede ser sana.
+// perUserTaskSuffix matchea los nombres de tarea que terminan en un SID de
+// usuario, con o sin sufijo numérico: "…-S-1-5-21-…-1001" y
+// "PostponeDeviceSetupToast_S-1-5-21-…-1001_0". Windows y sus componentes
+// (OneDrive, Optimize Start Menu Cache Files, DeviceSetupManager) las crean y
+// borran por cuenta propia para cada usuario.
+var perUserTaskSuffix = regexp.MustCompile(`(?i)[-_]S-1-5-(?:18|19|20|21-\d+-\d+-\d+-\d+)(?:_\d+)?$`)
+
+// windowsManagedRootTasks son tareas que Windows crea en la raíz del árbol de
+// tareas, fuera de Microsoft\, y cuya entrada en TaskCache puede existir sin
+// XML en disco sin que nadie las haya tocado. Se comparan por prefijo, en
+// minúsculas.
+var windowsManagedRootTasks = []string{
+	"postponedevicesetuptoast",
+	"user_feed_synchronization-",
+	"optimize start menu cache files-",
+	"createexplorershellunelevatedtask",
+	"microsoftedgeupdatetask",
+	"onedrive ",
+}
+
+// isWindowsManagedRootTask reporta si la ruta relativa de una tarea es una de
+// las que Windows administra por su cuenta en la raíz del árbol. Para ellas,
+// "está en el registro pero no en disco" es un estado normal, no un borrado:
+// el único CRITICAL del reporte real del 2026-08-05 fue exactamente esto.
+func isWindowsManagedRootTask(relPath string) bool {
+	lower := strings.ToLower(relPath)
+	if strings.Contains(lower, `\`) {
+		return false // solo tareas de la raíz
+	}
+	if perUserTaskSuffix.MatchString(lower) {
+		return true
+	}
+	for _, p := range windowsManagedRootTasks {
+		if strings.HasPrefix(lower, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// nonEvidenceDesyncKinds son las direcciones de eventlog.desync que no pueden
+// ser sanas: los Event Logs rotan, así que un servicio o tarea registrados
+// hace meses nunca van a tener su evento de instalación disponible. La
+// ausencia no prueba nada; se reporta para auditoría sin mover el veredicto.
+var nonEvidenceDesyncKinds = map[string]bool{
+	"task_no_register_log":   true,
+	"service_no_install_log": true,
+}
+
+// eventDesyncRule baja a INFO las direcciones que no pueden ser sanas.
 func eventDesyncRule(a collector.Artifact, r Rule) Rule {
 	var payload struct {
 		Kind string
@@ -144,10 +195,7 @@ func eventDesyncRule(a collector.Artifact, r Rule) Rule {
 	if err := json.Unmarshal(a.Data, &payload); err != nil {
 		return r
 	}
-	if payload.Kind == "task_no_register_log" {
-		// Los Event Logs rotan: una tarea registrada hace meses nunca va a
-		// tener su evento 106 disponible. La ausencia no prueba nada, así que
-		// se reporta para auditoría pero no mueve el veredicto.
+	if nonEvidenceDesyncKinds[payload.Kind] {
 		r.Severity = SevInfo
 		r.Confidence = 0.0
 	}
@@ -171,11 +219,14 @@ func scheduledTaskRule(a collector.Artifact, r Rule) Rule {
 }
 
 // normalDriverLocations son ubicaciones donde el software instalado deja sus
-// drivers de forma legítima (antivirus, GPU, VPN, virtualización).
+// drivers de forma legítima (antivirus, GPU, VPN, virtualización). Se comparan
+// contra la ruta YA normalizada por services.NormalizeImagePath, que resuelve
+// \SystemRoot\, \??\ y las rutas relativas a c:\windows\.
 var normalDriverLocations = []string{
 	`\program files\`,
 	`\program files (x86)\`,
-	`\windows\system32\driverstore\`,
+	`c:\windows\system32\`,
+	`c:\windows\syswow64\`,
 }
 
 // serviceDriverRule baja a INFO los drivers en ubicaciones normales de
@@ -188,9 +239,9 @@ func serviceDriverRule(a collector.Artifact, r Rule) Rule {
 	if err := json.Unmarshal(a.Data, &payload); err != nil {
 		return r
 	}
-	lower := strings.ToLower(payload.ImagePath)
+	normalized := winservices.NormalizeImagePath(payload.ImagePath)
 	for _, loc := range normalDriverLocations {
-		if strings.Contains(lower, loc) {
+		if strings.Contains(normalized, loc) {
 			r.Severity = SevInfo
 			r.Confidence = 0.0
 			return r

@@ -62,16 +62,23 @@ func Evaluate(results []collector.Result) ([]report.Finding, report.Verdict) {
 			}
 			at, hasTime := timeOf(a)
 			seen[key] = len(items)
+			f := report.Finding{
+				ID:         fmt.Sprintf("%s-%d", res.Collector, i),
+				Category:   rule.Category,
+				Severity:   rule.Severity,
+				Confidence: rule.Confidence,
+				Title:      titleFor(a.Type),
+				Evidence:   string(a.Data),
+				Artifact:   a.Source,
+			}
+			// La fecha del hecho va al hallazgo, no solo al contexto de los
+			// combos: sin ella el reporte no tiene línea de tiempo.
+			if hasTime {
+				when := at
+				f.Timestamp = &when
+			}
 			items = append(items, evaluated{
-				finding: report.Finding{
-					ID:         fmt.Sprintf("%s-%d", res.Collector, i),
-					Category:   rule.Category,
-					Severity:   rule.Severity,
-					Confidence: rule.Confidence,
-					Title:      titleFor(a.Type),
-					Evidence:   string(a.Data),
-					Artifact:   a.Source,
-				},
+				finding: f,
 				artType: a.Type,
 				at:      at,
 				hasTime: hasTime,
