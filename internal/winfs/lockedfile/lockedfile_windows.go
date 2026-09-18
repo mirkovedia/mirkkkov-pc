@@ -203,5 +203,7 @@ func (v *winVolume) fileRecord(ref uint64) ([]byte, error) {
 	if recLen <= 0 || 12+recLen > int(ret) {
 		return nil, errors.New("FileRecordLength fuera de rango")
 	}
-	return winmft.ApplyFixup(out[12 : 12+recLen])
+	// NormalizeFixup y no ApplyFixup: FSCTL entrega el registro con el fixup
+	// ya aplicado por NTFS, no en la forma de disco.
+	return winmft.NormalizeFixup(out[12 : 12+recLen])
 }

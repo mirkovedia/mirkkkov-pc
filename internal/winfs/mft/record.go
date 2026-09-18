@@ -52,7 +52,7 @@ func ParseRecord(buf []byte) (Record, error) {
 	if binary.LittleEndian.Uint32(buf[0:4]) != fileSignature {
 		return Record{}, ErrBadSignature
 	}
-	fixed, err := ApplyFixup(buf)
+	fixed, err := NormalizeFixup(buf)
 	if err != nil {
 		return Record{}, err
 	}
@@ -89,6 +89,52 @@ func ApplyFixup(buf []byte) ([]byte, error) {
 		}
 		orig := out[usaOff+2*(i+1) : usaOff+2*(i+1)+2]
 		copy(out[sectorEnd:sectorEnd+2], orig)
+	}
+	return out, nil
+}
+
+// NormalizeFixup devuelve el registro con los finales de sector reales,
+// venga en cualquiera de las dos formas en que Windows lo entrega:
+//
+//   - forma de disco: cada final de sector lleva el update sequence number y
+//     el valor real está guardado en la USA. Es lo que se lee del volumen en
+//     crudo (ScanDeleted) y lo que corrige ApplyFixup.
+//   - forma de memoria: NTFS ya aplicó el fixup al leer el registro a su
+//     caché, así que los finales de sector tienen el valor real. Es lo que
+//     devuelve FSCTL_GET_NTFS_FILE_RECORD.
+//
+// ParseRecord exigía siempre la forma de disco. Con los registros de FSCTL
+// eso fallaba en cada llamada, y como ScanTimestomp descarta los registros
+// que no parsean, el colector de timestomping nunca evaluó un solo archivo.
+// Lo destapó el primer test que corrió la lectura raw en un runner elevado.
+func NormalizeFixup(buf []byte) ([]byte, error) {
+	if len(buf) < 0x08 {
+		return nil, errors.New("registro MFT truncado")
+	}
+	usaOff := int(binary.LittleEndian.Uint16(buf[0x04:0x06]))
+	usaCount := int(binary.LittleEndian.Uint16(buf[0x06:0x08]))
+	if usaCount == 0 || usaOff+usaCount*2 > len(buf) {
+		return nil, errors.New("update sequence array inválido")
+	}
+	out := make([]byte, len(buf))
+	copy(out, buf)
+	seq := binary.LittleEndian.Uint16(out[usaOff : usaOff+2])
+	for i := 0; i < usaCount-1; i++ {
+		sectorEnd := (i+1)*sectorSize - 2
+		if sectorEnd+2 > len(out) {
+			return nil, errors.New("sector fuera de rango en fixup")
+		}
+		orig := binary.LittleEndian.Uint16(out[usaOff+2*(i+1) : usaOff+2*(i+1)+2])
+		switch binary.LittleEndian.Uint16(out[sectorEnd : sectorEnd+2]) {
+		case seq:
+			// Forma de disco: restaurar el valor real. Si seq == orig el
+			// resultado es el mismo por cualquiera de los dos caminos.
+			binary.LittleEndian.PutUint16(out[sectorEnd:sectorEnd+2], orig)
+		case orig:
+			// Forma de memoria: ya está corregido.
+		default:
+			return nil, errors.New("update sequence number no coincide (registro corrupto)")
+		}
 	}
 	return out, nil
 }
