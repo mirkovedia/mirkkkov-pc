@@ -5,8 +5,8 @@ import (
 	"encoding/binary"
 	"testing"
 
-	"github.com/telagem/agent-windows/internal/winfs/reghive"
-	"github.com/telagem/agent-windows/internal/winfs/reghive/reghivetest"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/reghive"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/reghive/reghivetest"
 )
 
 func u32(v uint32) []byte {

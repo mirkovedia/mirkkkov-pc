@@ -2,8 +2,8 @@
 package scheduler
 
 import (
-	"github.com/telagem/agent-windows/internal/winfs/reghive"
-	"github.com/telagem/agent-windows/internal/winfs/wintext"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/reghive"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/wintext"
 )
 
 // CachedTask es una entrada hoja del árbol TaskCache\Tree con su Id (GUID).

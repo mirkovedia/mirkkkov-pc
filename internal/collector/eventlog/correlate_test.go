@@ -3,8 +3,8 @@ package eventlog
 import (
 	"testing"
 
-	winscheduler "github.com/telagem/agent-windows/internal/winfs/scheduler"
-	winservices "github.com/telagem/agent-windows/internal/winfs/services"
+	winscheduler "github.com/mirkovedia/mirkkkov-pc/internal/winfs/scheduler"
+	winservices "github.com/mirkovedia/mirkkkov-pc/internal/winfs/services"
 )
 
 func hasDesync(ds []Desync, kind, subject string) bool {

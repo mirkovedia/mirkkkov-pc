@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/telagem/agent-windows/internal/collector"
+	"github.com/mirkovedia/mirkkkov-pc/internal/collector"
 )
 
 // Collector recolecta y parsea los archivos Prefetch del sistema.

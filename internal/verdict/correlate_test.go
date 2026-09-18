@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/telagem/agent-windows/internal/collector"
-	"github.com/telagem/agent-windows/internal/report"
+	"github.com/mirkovedia/mirkkkov-pc/internal/collector"
+	"github.com/mirkovedia/mirkkkov-pc/internal/report"
 )
 
 func TestTimeOfMFTTimestomp(t *testing.T) {

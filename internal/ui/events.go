@@ -8,7 +8,7 @@ package ui
 import (
 	"encoding/json"
 
-	"github.com/telagem/agent-windows/internal/report"
+	"github.com/mirkovedia/mirkkkov-pc/internal/report"
 )
 
 // Tipos de evento que el backend empuja a la interfaz.

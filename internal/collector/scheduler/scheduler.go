@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/telagem/agent-windows/internal/collector"
-	"github.com/telagem/agent-windows/internal/winfs/fsforensic"
-	"github.com/telagem/agent-windows/internal/winfs/reghive"
-	winscheduler "github.com/telagem/agent-windows/internal/winfs/scheduler"
+	"github.com/mirkovedia/mirkkkov-pc/internal/collector"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/fsforensic"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/reghive"
+	winscheduler "github.com/mirkovedia/mirkkkov-pc/internal/winfs/scheduler"
 )
 
 // Collector recolecta tareas programadas sospechosas/ocultas y su cross-check

@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/telagem/agent-windows/internal/report"
+	"github.com/mirkovedia/mirkkkov-pc/internal/report"
 )
 
 // LocalUploader implementa Uploader sin red: abre una sesión local y escribe el

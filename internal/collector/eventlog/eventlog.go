@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/telagem/agent-windows/internal/collector"
-	"github.com/telagem/agent-windows/internal/winfs/evtx"
-	"github.com/telagem/agent-windows/internal/winfs/reghive"
-	winscheduler "github.com/telagem/agent-windows/internal/winfs/scheduler"
-	winservices "github.com/telagem/agent-windows/internal/winfs/services"
+	"github.com/mirkovedia/mirkkkov-pc/internal/collector"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/evtx"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/reghive"
+	winscheduler "github.com/mirkovedia/mirkkkov-pc/internal/winfs/scheduler"
+	winservices "github.com/mirkovedia/mirkkkov-pc/internal/winfs/services"
 )
 
 // Collector recolecta y correlaciona Event Logs (.evtx).

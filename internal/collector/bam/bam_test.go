@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/telagem/agent-windows/internal/winfs/reghive"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/reghive"
 )
 
 func TestParseBAMFromFixture(t *testing.T) {
@@ -35,9 +35,7 @@ func TestDecodeBAMValueExtractsFiletime(t *testing.T) {
 	// 8 bytes de FILETIME + relleno; se valida que no sea el cero epoch.
 	raw := make([]byte, 24)
 	// FILETIME correspondiente a un instante > 1601.
-	for i, v := range []byte{0x00, 0x80, 0x3e, 0xd5, 0xde, 0xb1, 0x9d, 0x01} {
-		raw[i] = v
-	}
+	copy(raw, []byte{0x00, 0x80, 0x3e, 0xd5, 0xde, 0xb1, 0x9d, 0x01})
 	ts, ok := decodeBAMValue(raw)
 	if !ok {
 		t.Fatal("esperaba decodificación válida")

@@ -4,7 +4,7 @@ package verdict
 import (
 	"fmt"
 
-	"github.com/telagem/agent-windows/internal/report"
+	"github.com/mirkovedia/mirkkkov-pc/internal/report"
 )
 
 // summaryFinding colapsa la evidencia neutra de un colector en un solo

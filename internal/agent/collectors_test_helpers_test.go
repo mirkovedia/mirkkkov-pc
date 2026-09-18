@@ -3,7 +3,7 @@ package agent
 import (
 	"context"
 
-	"github.com/telagem/agent-windows/internal/collector"
+	"github.com/mirkovedia/mirkkkov-pc/internal/collector"
 )
 
 type memCollector struct{}

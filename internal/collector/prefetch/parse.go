@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/telagem/agent-windows/internal/winfs/compression"
-	"github.com/telagem/agent-windows/internal/winfs/wintext"
-	"github.com/telagem/agent-windows/internal/winfs/wintime"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/compression"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/wintext"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/wintime"
 )
 
 // Entry es un archivo Prefetch parseado.
@@ -76,4 +76,3 @@ func parsePrefetch(raw []byte) (Entry, error) {
 	}
 	return e, nil
 }
-

@@ -8,10 +8,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/telagem/agent-windows/internal/collector"
-	"github.com/telagem/agent-windows/internal/report"
-	"github.com/telagem/agent-windows/internal/transport"
-	"github.com/telagem/agent-windows/internal/verdict"
+	"github.com/mirkovedia/mirkkkov-pc/internal/collector"
+	"github.com/mirkovedia/mirkkkov-pc/internal/report"
+	"github.com/mirkovedia/mirkkkov-pc/internal/transport"
+	"github.com/mirkovedia/mirkkkov-pc/internal/verdict"
 )
 
 // Options configura una ejecución del agente.
@@ -86,4 +86,3 @@ func runWithCollectors(ctx context.Context, opts Options, up transport.Uploader,
 	}
 	return rep, nil
 }
-

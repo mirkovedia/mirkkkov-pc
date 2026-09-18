@@ -11,9 +11,9 @@ import (
 
 	"golang.org/x/sys/windows"
 
-	"github.com/telagem/agent-windows/internal/winfs/fsforensic"
-	winmft "github.com/telagem/agent-windows/internal/winfs/mft"
-	"github.com/telagem/agent-windows/internal/winfs/ntfspath"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/fsforensic"
+	winmft "github.com/mirkovedia/mirkkkov-pc/internal/winfs/mft"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/ntfspath"
 )
 
 // ErrUnsupported se mantiene por paridad con la build no-Windows.

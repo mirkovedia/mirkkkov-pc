@@ -13,19 +13,21 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/telagem/agent-windows/internal/agent"
-	"github.com/telagem/agent-windows/internal/collector"
-	"github.com/telagem/agent-windows/internal/consent"
-	"github.com/telagem/agent-windows/internal/elevate"
-	"github.com/telagem/agent-windows/internal/privilege"
-	"github.com/telagem/agent-windows/internal/report"
-	"github.com/telagem/agent-windows/internal/transport"
-	"github.com/telagem/agent-windows/internal/ui"
-	"github.com/telagem/agent-windows/internal/verdict"
+	"github.com/mirkovedia/mirkkkov-pc/internal/agent"
+	"github.com/mirkovedia/mirkkkov-pc/internal/collector"
+	"github.com/mirkovedia/mirkkkov-pc/internal/consent"
+	"github.com/mirkovedia/mirkkkov-pc/internal/elevate"
+	"github.com/mirkovedia/mirkkkov-pc/internal/privilege"
+	"github.com/mirkovedia/mirkkkov-pc/internal/report"
+	"github.com/mirkovedia/mirkkkov-pc/internal/transport"
+	"github.com/mirkovedia/mirkkkov-pc/internal/ui"
+	"github.com/mirkovedia/mirkkkov-pc/internal/verdict"
 	"golang.org/x/sys/windows"
 )
 
-const agentVersion = "0.1.0"
+// agentVersion se inyecta en el build con -ldflags "-X main.agentVersion=vX.Y.Z";
+// "dev" identifica un binario compilado a mano fuera del pipeline de release.
+var agentVersion = "dev"
 
 // uptimeMinutes devuelve el uptime del sistema en minutos vía GetTickCount64.
 // Un uptime bajo puede indicar un reinicio para limpiar artefactos volátiles.

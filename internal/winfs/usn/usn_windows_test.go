@@ -8,7 +8,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/telagem/agent-windows/internal/winfs/fsforensic"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/fsforensic"
 )
 
 // TestReadJournalIntegration corre solo si hay acceso al journal (elevación).

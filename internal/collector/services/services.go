@@ -7,9 +7,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/telagem/agent-windows/internal/collector"
-	"github.com/telagem/agent-windows/internal/winfs/reghive"
-	winservices "github.com/telagem/agent-windows/internal/winfs/services"
+	"github.com/mirkovedia/mirkkkov-pc/internal/collector"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/reghive"
+	winservices "github.com/mirkovedia/mirkkkov-pc/internal/winfs/services"
 )
 
 // Collector recolecta drivers no estándar del subárbol Services del hive SYSTEM.

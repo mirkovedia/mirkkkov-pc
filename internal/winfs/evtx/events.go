@@ -3,7 +3,7 @@ package evtx
 import (
 	"strconv"
 
-	"github.com/telagem/agent-windows/internal/winfs/wintext"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/wintext"
 )
 
 // fieldSpec describe qué nombre y cómo interpretar cada substitution por

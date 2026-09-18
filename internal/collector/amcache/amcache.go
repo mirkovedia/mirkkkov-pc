@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/telagem/agent-windows/internal/collector"
-	"github.com/telagem/agent-windows/internal/winfs/reghive"
-	"github.com/telagem/agent-windows/internal/winfs/wintext"
+	"github.com/mirkovedia/mirkkkov-pc/internal/collector"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/reghive"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/wintext"
 )
 
 // Entry es un ejecutable registrado por AmCache. El SHA-1 sobrevive al borrado

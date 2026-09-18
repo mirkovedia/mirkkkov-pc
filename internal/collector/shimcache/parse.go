@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/telagem/agent-windows/internal/winfs/wintext"
-	"github.com/telagem/agent-windows/internal/winfs/wintime"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/wintext"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/wintime"
 )
 
 // Entry es un ejecutable visto por el sistema según ShimCache.

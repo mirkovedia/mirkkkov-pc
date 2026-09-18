@@ -22,10 +22,10 @@ func TestRevealablePathRejectsNonFiles(t *testing.T) {
 	no := []string{
 		"",
 		`Microsoft\Windows\Application Experience\AitAgent`, // tarea programada
-		"EvilDrv",                        // nombre de servicio
-		`\<sin-resolver>\run-hook.cmd`,   // el MFT no resolvió el padre
-		"prefetch",                       // nombre de colector
-		"C:\nmalicioso",                  // salto de línea
+		"EvilDrv",                      // nombre de servicio
+		`\<sin-resolver>\run-hook.cmd`, // el MFT no resolvió el padre
+		"prefetch",                     // nombre de colector
+		"C:\nmalicioso",                // salto de línea
 	}
 	for _, p := range no {
 		if RevealablePath(p) {

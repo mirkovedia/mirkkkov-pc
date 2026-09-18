@@ -6,7 +6,7 @@ import (
 	"time"
 	"unicode/utf16"
 
-	"github.com/telagem/agent-windows/internal/winfs/wintime"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/wintime"
 )
 
 // Razones USN relevantes (winioctl.h).

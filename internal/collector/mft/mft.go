@@ -7,8 +7,8 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/telagem/agent-windows/internal/collector"
-	winmft "github.com/telagem/agent-windows/internal/winfs/mft"
+	"github.com/mirkovedia/mirkkkov-pc/internal/collector"
+	winmft "github.com/mirkovedia/mirkkkov-pc/internal/winfs/mft"
 )
 
 // Collector detecta timestomping en archivos forenses del volumen vía MFT.

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/telagem/agent-windows/internal/winfs/evtx/evtxtest"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/evtx/evtxtest"
 )
 
 func TestFieldsForLogon(t *testing.T) {

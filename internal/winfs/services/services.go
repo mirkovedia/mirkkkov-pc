@@ -5,8 +5,8 @@ import (
 	"encoding/binary"
 	"strings"
 
-	"github.com/telagem/agent-windows/internal/winfs/reghive"
-	"github.com/telagem/agent-windows/internal/winfs/wintext"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/reghive"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/wintext"
 )
 
 // DriverService es un servicio del registro con sus metadatos crudos.

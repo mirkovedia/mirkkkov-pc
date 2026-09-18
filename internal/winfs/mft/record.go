@@ -6,7 +6,7 @@ import (
 	"time"
 	"unicode/utf16"
 
-	"github.com/telagem/agent-windows/internal/winfs/wintime"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/wintime"
 )
 
 // Timestamps son los 4 tiempos NTFS de un atributo SI o FN.
@@ -19,12 +19,12 @@ type Timestamps struct {
 
 // Record es un registro FILE del MFT ya parseado (solo lo relevante para timestomping).
 type Record struct {
-	InUse    bool // flag 0x0001 del header FILE
-	IsDir    bool // flag 0x0002 del header FILE
-	SI       Timestamps
-	FN       Timestamps
-	HasSI    bool
-	HasFN    bool
+	InUse     bool // flag 0x0001 del header FILE
+	IsDir     bool // flag 0x0002 del header FILE
+	SI        Timestamps
+	FN        Timestamps
+	HasSI     bool
+	HasFN     bool
 	FileName  string
 	ParentRef uint64 // referencia MFT del directorio padre (de los 8 primeros bytes del $FN)
 

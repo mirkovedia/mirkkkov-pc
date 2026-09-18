@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/telagem/agent-windows/internal/collector"
+	"github.com/mirkovedia/mirkkkov-pc/internal/collector"
 )
 
 func art(artifactType, source string, data any) collector.Artifact {

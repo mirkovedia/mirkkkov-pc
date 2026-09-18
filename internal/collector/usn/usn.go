@@ -8,8 +8,8 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/telagem/agent-windows/internal/collector"
-	winusn "github.com/telagem/agent-windows/internal/winfs/usn"
+	"github.com/mirkovedia/mirkkkov-pc/internal/collector"
+	winusn "github.com/mirkovedia/mirkkkov-pc/internal/winfs/usn"
 )
 
 // Collector lee eventos relevantes del USN Change Journal del volumen.

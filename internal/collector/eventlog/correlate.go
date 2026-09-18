@@ -4,8 +4,8 @@
 package eventlog
 
 import (
-	winscheduler "github.com/telagem/agent-windows/internal/winfs/scheduler"
-	winservices "github.com/telagem/agent-windows/internal/winfs/services"
+	winscheduler "github.com/mirkovedia/mirkkkov-pc/internal/winfs/scheduler"
+	winservices "github.com/mirkovedia/mirkkkov-pc/internal/winfs/services"
 )
 
 // InstallEvent es un evento 7045 (instalación de servicio) parseado del EVTX.

@@ -4,8 +4,8 @@ package verdict
 import (
 	"fmt"
 
-	"github.com/telagem/agent-windows/internal/collector"
-	"github.com/telagem/agent-windows/internal/report"
+	"github.com/mirkovedia/mirkkkov-pc/internal/collector"
+	"github.com/mirkovedia/mirkkkov-pc/internal/report"
 )
 
 // Evaluate convierte los resultados crudos de los colectores en hallazgos
