@@ -1,7 +1,11 @@
 // internal/verdict/preview.go
 package verdict
 
-import "github.com/mirkovedia/mirkkkov-pc/internal/collector"
+import (
+	"time"
+
+	"github.com/mirkovedia/mirkkkov-pc/internal/collector"
+)
 
 // PreviewResult es la clasificación preliminar de un artefacto suelto.
 type PreviewResult struct {
@@ -12,6 +16,8 @@ type PreviewResult struct {
 	// evidencia INFO es el ruido normal de una computadora en uso: mostrarla
 	// mientras escanea taparía las señales que importan.
 	Notable bool
+	// At es la fecha del hecho, si el artefacto la tiene.
+	At *time.Time
 }
 
 // Preview clasifica un artefacto para mostrarlo mientras el escaneo corre.
@@ -26,7 +32,12 @@ type PreviewResult struct {
 // autoritativa.
 func Preview(a collector.Artifact) PreviewResult {
 	r := escalate(a, ruleFor(a.Type))
+	var at *time.Time
+	if t, ok := timeOf(a); ok {
+		at = &t
+	}
 	return PreviewResult{
+		At:       at,
 		Category: r.Category,
 		Severity: r.Severity,
 		Title:    titleOf(a),

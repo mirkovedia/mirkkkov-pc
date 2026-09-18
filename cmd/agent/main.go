@@ -264,6 +264,8 @@ func runGUI(timeout time.Duration, outPath string, elevated bool) error {
 						}
 						if res.Err != nil {
 							ev.Error = res.Err.Error()
+						} else {
+							ev.Activity = verdict.Activity([]collector.Result{res}, time.Now())
 						}
 						emit(ev)
 					},
@@ -341,6 +343,7 @@ func streamFindings(res collector.Result, emit func(ui.Event)) {
 			Title:     p.Title,
 			Path:      a.Source,
 			Collector: res.Collector,
+			Timestamp: p.At,
 		})
 	}
 }

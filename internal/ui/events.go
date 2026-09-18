@@ -7,6 +7,7 @@ package ui
 
 import (
 	"encoding/json"
+	"time"
 
 	"github.com/mirkovedia/mirkkkov-pc/internal/report"
 )
@@ -46,6 +47,14 @@ type Event struct {
 	Category string `json:"category,omitempty"`
 	Title    string `json:"title,omitempty"`
 	Path     string `json:"path,omitempty"`
+
+	// Timestamp es la fecha del hecho de un KindFinding, si el artefacto la
+	// tiene: ubica la detección sobre el registro de actividad.
+	Timestamp *time.Time `json:"timestamp,omitempty"`
+	// Activity es la actividad que aportó un colector. Solo en
+	// KindCollectorDone: deja que el registro se dibuje fuente por fuente
+	// mientras la revisión corre, en vez de aparecer entero al final.
+	Activity *report.Activity `json:"activity,omitempty"`
 
 	Report *report.Report `json:"report,omitempty"`
 	// ReportPath es dónde quedó escrito el reporte. Solo en KindScanDone. Va

@@ -38,6 +38,16 @@ type CollectorRun struct {
 	Error      string `json:"error,omitempty"`
 }
 
+// Activity es el histograma de actividad de la máquina: cuántos hechos con
+// fecha hubo por canal en cada tramo de BucketMinutes desde From. Son solo
+// conteos. Es lo que la interfaz dibuja como registro de actividad, y no
+// entra en la cadena de custodia: se deriva de los mismos artefactos.
+type Activity struct {
+	From          time.Time        `json:"from"`
+	BucketMinutes int              `json:"bucketMinutes"`
+	Channels      map[string][]int `json:"channels"`
+}
+
 // Niveles posibles del veredicto global.
 const (
 	LevelLimpio          = "LIMPIO"
@@ -86,6 +96,7 @@ type Report struct {
 	// custodia: existen para que un escaneo degradado se pueda diagnosticar
 	// leyendo el reporte, sin tener acceso a la máquina.
 	Diagnostics []string  `json:"diagnostics,omitempty"`
+	Activity    *Activity `json:"activity,omitempty"`
 	Findings    []Finding `json:"findings"`
 	Verdict     Verdict   `json:"verdict"`
 	Nonce       string    `json:"nonce"`

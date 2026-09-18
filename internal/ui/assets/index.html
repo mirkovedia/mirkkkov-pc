@@ -5,125 +5,137 @@
 <title>Mirkkkov</title>
 <!--INLINE_CSS-->
 </head>
-<body>
+<body data-screen="consent">
 
 <header class="topbar">
   <div class="brand">
-    <span class="dot" id="brand-dot"></span>
+    <span class="lamp" id="brand-dot"></span>
     <span class="brand-name">Mirkkkov</span>
     <span class="brand-sub">Verificación forense</span>
   </div>
   <div class="topbar-right">
-    <!-- Ecualizador: la señal de que el instrumento está trabajando. -->
-    <span class="wave" id="wave" hidden>
-      <i></i><i></i><i></i><i></i><i></i>
-    </span>
+    <!-- Señal de actividad: tres barras con fases distintas. -->
+    <span class="wave" id="wave" hidden><i></i><i></i><i></i></span>
     <span id="topbar-status"></span>
   </div>
 </header>
 
-<main>
+<main id="main">
 
   <!-- ============ 1. CONSENTIMIENTO ============ -->
-  <section id="screen-consent" class="screen active">
-    <div class="card">
-      <h1>Antes de empezar</h1>
+  <section id="screen-consent" class="screen">
+    <div class="consent-lead">
+      <p class="label">Revisión con tu consentimiento</p>
+      <h1>Antes de revisar tu equipo</h1>
       <p class="lead">
-        Esta revisión analiza rastros que tu propia computadora ya guarda sobre
-        qué programas se ejecutaron y qué archivos se borraron.
+        Mirkkkov lee los rastros que Windows ya guarda sobre qué se ejecutó, qué
+        se borró y qué está corriendo ahora. Con eso dibuja la actividad de los
+        últimos 30 días, para que la miren juntos.
       </p>
-
-      <div class="cols">
-        <div class="col col-yes">
-          <h2>Qué se revisa</h2>
-          <ul>
-            <li>Nombres, hashes y fechas de programas ejecutados</li>
-            <li>Programas en ejecución ahora: nombre, ruta y firma</li>
-            <li>Rastros de borrado de archivos</li>
-            <li>Servicios, tareas programadas y programas de inicio</li>
-            <li>Emuladores de Android, sus macros y herramientas de automatización</li>
-            <li>Registros de eventos y configuración de Windows</li>
-          </ul>
-        </div>
-        <div class="col col-no">
-          <h2>Qué NO se toca</h2>
-          <ul>
-            <li>Documentos, fotos y videos</li>
-            <li>Mensajes y conversaciones</li>
-            <li>Contraseñas y cookies</li>
-            <li>Historial de navegación</li>
-          </ul>
-        </div>
-      </div>
-
       <p class="fineprint">
-        Solo se leen <strong>metadatos</strong>, nunca el contenido de tus archivos.
-        Los identificadores de hardware se anonimizan. El reporte queda guardado
-        en tu equipo y podés leerlo entero.
+        Solo metadatos: nombres, rutas, fechas, hashes y firmas. Nunca el
+        contenido de un archivo. El reporte queda guardado en tu equipo y lo
+        podés leer entero.
       </p>
-
       <div class="actions">
-        <button class="btn btn-ghost" onclick="rejectConsent()">Rechazar</button>
-        <button class="btn btn-primary" onclick="acceptConsent()">Acepto, iniciar revisión</button>
+        <button class="btn btn-primary" onclick="acceptConsent()">Acepto la revisión</button>
+        <button class="btn btn-ghost" onclick="rejectConsent()">No acepto</button>
+      </div>
+    </div>
+
+    <div class="placard">
+      <div class="placard-block">
+        <h2 class="label">Se lee</h2>
+        <ul class="reads">
+          <li><i class="dot lane-exec"></i>Programas ejecutados: nombres, hashes y fechas</li>
+          <li><i class="dot lane-exec"></i>Programas en ejecución ahora: ruta y firma</li>
+          <li><i class="dot lane-files"></i>Archivos creados, borrados y renombrados</li>
+          <li><i class="dot lane-session"></i>Inicios de sesión, reinicios y registros de eventos</li>
+          <li><i class="dot"></i>Servicios, tareas programadas e inicio automático</li>
+          <li><i class="dot"></i>Emuladores de Android, sus macros y herramientas de automatización</li>
+        </ul>
+      </div>
+      <div class="placard-block never">
+        <h2 class="label">Nunca se lee</h2>
+        <ul class="never-list">
+          <li>Documentos, fotos y videos</li>
+          <li>Mensajes y conversaciones</li>
+          <li>Contraseñas y cookies</li>
+          <li>Historial de navegación</li>
+          <li>Conexiones de red</li>
+        </ul>
       </div>
     </div>
   </section>
 
-  <!-- ============ 2. ESCANEO ============ -->
-  <section id="screen-scan" class="screen screen-wide">
-    <div class="scan-grid">
+  <!-- ============ 3a. VEREDICTO ============ -->
+  <section id="verdict" class="screen-verdict verdict">
+    <div class="verdict-main">
+      <p class="label">Resultado de la revisión</p>
+      <div class="verdict-level" id="verdict-level">—</div>
+      <p class="verdict-summary" id="verdict-summary"></p>
+      <p class="verdict-note" id="verdict-note" hidden></p>
 
-      <!-- columna izquierda: fuentes -->
-      <aside class="scan-side">
-        <h2 class="side-title">Fuentes</h2>
-        <ul class="collector-list" id="collector-list"></ul>
-      </aside>
-
-      <!-- columna derecha: hallazgos en vivo -->
-      <div class="scan-main" id="scan-main">
-        <!-- Barrido: señala que el panel sigue leyendo aunque no aparezca
-             nada nuevo durante varios segundos. -->
-        <div class="sweep" id="sweep"></div>
-        <div class="live-header">
-          <h2 class="side-title">Detecciones</h2>
-          <div class="live-counters" id="live-counters"></div>
-        </div>
-        <div class="live-feed" id="live-feed">
-          <div class="live-empty" id="live-empty">
-            Todavía no se detectó nada relevante.
-          </div>
-        </div>
-      </div>
-
-    </div>
-  </section>
-
-  <!-- ============ 3. RESULTADOS ============ -->
-  <section id="screen-results" class="screen">
-    <div class="verdict" id="verdict">
-      <div class="verdict-head">
-        <span class="verdict-label">Resultado</span>
-        <span class="verdict-level" id="verdict-level">—</span>
-      </div>
-      <div class="verdict-summary" id="verdict-summary"></div>
-
-      <!-- Distribución real de la evidencia. Un CRITICAL entre 300 hallazgos
-           se ve como lo que es, no como el titular. -->
+      <!-- Distribución real de la evidencia. Un crítico entre 300 hallazgos
+           se ve del tamaño que le corresponde, no como titular. -->
       <div class="dist">
         <div class="dist-bar" id="dist-bar"></div>
         <div class="dist-legend" id="dist-legend"></div>
       </div>
-
-      <div class="verdict-note" id="verdict-note" hidden></div>
-
-      <!-- Contexto de la máquina: lo que hace falta para leer lo de abajo. -->
-      <div class="context" id="context" hidden></div>
     </div>
+    <!-- Contexto de la máquina: lo que hace falta para leer lo de abajo. -->
+    <dl class="ficha" id="context"></dl>
+  </section>
 
-    <!-- Filtros: severidad, texto y orden. -->
+  <!-- ============ REGISTRO DE ACTIVIDAD ============
+       Una sola tira para las tres pantallas: en blanco al pedir
+       consentimiento, dibujándose durante la revisión, anotada al final. -->
+  <section class="recorder" id="recorder" aria-label="Registro de actividad">
+    <div class="rec-head">
+      <h2 class="label">Registro de actividad</h2>
+      <span class="rec-legend" aria-hidden="true">
+        <span><i class="swatch ink-exec"></i>Ejecución</span>
+        <span><i class="swatch ink-files"></i>Archivos</span>
+        <span><i class="swatch ink-session"></i>Sesión</span>
+      </span>
+      <div class="seg" role="group" aria-label="Rango del registro">
+        <button data-range="720" class="on" aria-pressed="true" onclick="setRange(this)">30 días</button>
+        <button data-range="168" aria-pressed="false" onclick="setRange(this)">7 días</button>
+        <button data-range="48" aria-pressed="false" onclick="setRange(this)">48 horas</button>
+      </div>
+    </div>
+    <div class="paper" id="paper">
+      <svg id="strip" role="img" aria-label="Actividad por hora de los últimos 30 días"></svg>
+      <!-- La pluma: recorre el papel mientras la revisión corre. -->
+      <div class="pen" id="sweep"></div>
+      <p class="paper-empty" id="paper-empty">En blanco. Al aceptar, acá se dibuja la actividad de los últimos 30 días.</p>
+    </div>
+  </section>
+
+  <!-- ============ 2. REVISIÓN EN CURSO ============ -->
+  <section id="screen-scan" class="screen">
+    <div class="scan-grid">
+      <aside class="panel scan-side">
+        <h2 class="label">Fuentes</h2>
+        <ul class="collector-list" id="collector-list"></ul>
+      </aside>
+      <div class="panel scan-main" id="scan-main">
+        <div class="live-header">
+          <h2 class="label">Detecciones</h2>
+          <div class="live-counters" id="live-counters"></div>
+        </div>
+        <div class="live-feed" id="live-feed">
+          <p class="live-empty" id="live-empty">Todavía no apareció nada para revisar.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 3b. HALLAZGOS ============ -->
+  <section id="screen-results" class="screen">
     <div class="filter-bar" id="filter-bar" hidden>
       <div class="filter-chips" id="filter-chips"></div>
-      <input class="search" id="search" type="search" placeholder="Buscar en título, ruta o evidencia"
+      <input class="search" id="search" type="search" placeholder="Buscar por título, ruta o evidencia"
              aria-label="Buscar hallazgos" oninput="onSearchInput(this)">
       <select class="sort" id="sort" aria-label="Ordenar" onchange="onSortChange(this)">
         <option value="severity">Por categoría y severidad</option>
@@ -135,20 +147,20 @@
     <div class="findings" id="findings"></div>
 
     <div class="results-footer">
-      <span class="report-path" id="report-path"></span>
+      <button class="report-path" id="report-path" onclick="copyReportPath()" title="Copiar la ruta del reporte"></button>
       <span class="results-actions">
         <button class="btn btn-ghost" id="copy-btn" onclick="copyReportPath()" hidden>Copiar ruta</button>
         <button class="btn btn-ghost" onclick="onExportClick()">Exportar HTML</button>
-        <button class="btn btn-ghost" onclick="onCloseClick()">Cerrar</button>
+        <button class="btn" onclick="onCloseClick()">Cerrar</button>
       </span>
     </div>
   </section>
 
-  <div class="toast" id="toast" role="status" aria-live="polite"></div>
-
 </main>
 
-<!-- Barra de progreso fija al pie. Solo visible durante el escaneo. -->
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<!-- Barra de progreso fija al pie. Solo visible durante la revisión. -->
 <footer class="statusbar" id="statusbar">
   <div class="statusbar-track">
     <div class="statusbar-fill" id="progress-bar"></div>
@@ -161,7 +173,7 @@
       <span id="progress-count">0 / 0</span>
       <span class="statusbar-pct" id="progress-pct">0%</span>
       <button class="btn btn-ghost btn-small" id="cancel-btn" onclick="onCancelClick()"
-              title="Detener el escaneo y guardar lo revisado hasta ahora">Cancelar</button>
+              title="Detener la revisión y guardar lo revisado hasta ahora">Cancelar</button>
     </span>
   </div>
 </footer>

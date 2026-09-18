@@ -78,6 +78,7 @@ func runWithCollectors(ctx context.Context, opts Options, up transport.Uploader,
 
 	findings, v := verdict.Evaluate(results)
 	rep.Verdict = v
+	rep.Activity = verdict.Activity(results, time.Now())
 	seq := 0
 	for _, f := range findings {
 		chainHash, err := chain.Append(f)

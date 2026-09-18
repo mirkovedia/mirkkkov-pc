@@ -4,18 +4,24 @@ var state = {
   totalArtifacts: 0,
   collectors: {}, // nombre -> li del DOM
   live: { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 },
-  liveShown: 0,
   report: null,
   reportPath: "",
   filters: { sev: { CRITICAL: true, HIGH: true, MEDIUM: true, LOW: true, INFO: true }, text: "", sort: "severity" },
+  // Registro de actividad.
+  activity: null,     // { from: ms, channels: {execution:[], files:[], session:[]} }
+  range: 720,         // horas visibles
+  markers: [],        // [{ t: ms, severity, title, id }]
+  revealStrip: false, // descubrir el papel una sola vez
+  findingEls: {},     // id del hallazgo -> su nodo
 };
 
-// Tope de nodos en el feed en vivo. Sin esto un escaneo con muchas señales
+// Tope de nodos en el feed en vivo. Sin esto una revisión con muchas señales
 // degrada el render: el DOM crece sin límite mientras el usuario mira.
 var MAX_LIVE_NODES = 300;
 
 var SEV_ORDER = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1, INFO: 0 };
 var SEV_LIST = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"];
+var SEV_LABEL = { CRITICAL: "Crítico", HIGH: "Alto", MEDIUM: "Medio", LOW: "Bajo", INFO: "Info" };
 
 var CATEGORY_LABEL = {
   ANTI_FORENSIC: "Manipulación de rastros",
@@ -25,33 +31,60 @@ var CATEGORY_LABEL = {
   KNOWN_CHEAT: "Cheats conocidos",
 };
 
-var SIG_LABEL = {
-  signed: "Firmado",
-  unsigned: "Sin firma",
-  invalid: "Firma inválida",
+// Las fuentes se nombran por lo que la persona reconoce; el identificador
+// técnico queda como dato secundario.
+var COLLECTOR_LABEL = {
+  processes: "Programas en ejecución",
+  bam: "Actividad en segundo plano",
+  shimcache: "Compatibilidad de programas",
+  amcache: "Inventario de programas",
+  services: "Servicios y drivers",
+  persistence: "Inicio automático",
+  emulator: "Emuladores y macros",
+  sysconfig: "Configuración del sistema",
+  prefetch: "Programas ejecutados",
+  usn: "Diario de cambios de archivos",
+  mft_timestomp: "Fechas de archivos",
+  deleted_entries: "Archivos borrados",
+  scheduled_tasks: "Tareas programadas",
+  eventlog: "Registros de eventos",
 };
 
+var SIG_LABEL = { signed: "Firmado", unsigned: "Sin firma", invalid: "Firma inválida" };
+
+var LEVEL_LABEL = {
+  LIMPIO: "Sin hallazgos",
+  INCOMPLETO: "Revisión parcial",
+  SOSPECHOSO: "Indicios a revisar",
+  EVIDENCIA_FUERTE: "Evidencia fuerte",
+};
+
+var FOLDER_ICON =
+  '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">' +
+  '<path d="M1.5 4.2c0-.6.5-1.1 1.1-1.1h3.2l1.4 1.6h6.2c.6 0 1.1.5 1.1 1.1v6.4c0 .6-.5 1.1-1.1 1.1H2.6c-.6 0-1.1-.5-1.1-1.1z"/></svg>';
+
+function collectorLabel(name) { return COLLECTOR_LABEL[name] || name; }
+
 function show(id) {
-  var screens = document.querySelectorAll(".screen");
-  for (var i = 0; i < screens.length; i++) screens[i].classList.remove("active");
-  document.getElementById(id).classList.add("active");
+  document.body.setAttribute("data-screen", id.replace("screen-", ""));
+  document.getElementById("main").scrollTop = 0;
+  renderStrip();
 }
 
 function acceptConsent() {
   show("screen-scan");
-  document.getElementById("topbar-status").textContent = "Analizando";
-  document.getElementById("statusbar").classList.add("on");
+  document.getElementById("topbar-status").textContent = "Revisando";
   setScanning(true);
   window.startScan();
 }
 
 // setScanning enciende o apaga las señales de actividad. Van juntas a
-// propósito: si una queda animando cuando el escaneo terminó, la interfaz
+// propósito: si una queda animando cuando la revisión terminó, la interfaz
 // miente sobre lo que está pasando.
 function setScanning(on) {
+  document.body.classList.toggle("scanning", on);
   document.getElementById("wave").hidden = !on;
   document.getElementById("brand-dot").classList.toggle("live", on);
-  document.getElementById("sweep").classList.toggle("on", on);
   document.getElementById("statusbar").classList.toggle("on", on);
 }
 
@@ -61,12 +94,10 @@ function countUp(el, to) {
   var from = parseInt(el.getAttribute("data-v") || "0", 10);
   if (from === to) return;
   el.setAttribute("data-v", to);
-
   var dur = 420;
   var t0 = performance.now();
   function step(now) {
     var p = Math.min((now - t0) / dur, 1);
-    // easing suave al final, para que se frene en vez de cortarse
     var eased = 1 - Math.pow(1 - p, 3);
     el.textContent = Math.round(from + (to - from) * eased).toLocaleString("es");
     if (p < 1) requestAnimationFrame(step);
@@ -87,20 +118,20 @@ function onCloseClick() {
   window.closeApp();
 }
 
-// cancelScan pide al backend que corte el escaneo. Lo que ya se revisó igual
+// onCancelClick pide al backend que corte la revisión. Lo ya revisado igual
 // termina en el reporte, marcado como ABORTED: la pantalla de resultados
 // llega sola cuando el backend suelta los recursos y escribe el archivo.
 function onCancelClick() {
   var btn = document.getElementById("cancel-btn");
   btn.disabled = true;
   btn.textContent = "Cancelando…";
-  document.getElementById("progress-current").textContent = "Deteniendo el escaneo";
+  document.getElementById("progress-current").textContent = "Deteniendo la revisión";
   window.cancelScan();
 }
 
 // ---------------------------------------------------------------- eventos
 
-// Punto de entrada que el backend invoca por cada evento del escaneo.
+// Punto de entrada que el backend invoca por cada evento de la revisión.
 window.onAgentEvent = function (ev) {
   switch (ev.kind) {
     case "collector_start":
@@ -125,31 +156,33 @@ window.onAgentEvent = function (ev) {
 };
 
 function onCollectorStart(ev) {
-  document.getElementById("progress-current").textContent = "Analizando " + ev.collector;
+  document.getElementById("progress-current").textContent = collectorLabel(ev.collector);
   document.getElementById("progress-count").textContent = ev.index + " / " + ev.total;
 
   var li = state.collectors[ev.collector];
   if (!li) {
     li = document.createElement("li");
     li.innerHTML =
-      '<span class="c-icon">◐</span><span class="c-name"></span>' +
+      '<span class="c-icon"></span><span class="c-name"></span>' +
       '<span class="c-meta"></span><span class="c-track"><i class="c-fill"></i></span>';
-    li.querySelector(".c-name").textContent = ev.collector;
+    li.querySelector(".c-name").textContent = collectorLabel(ev.collector);
+    li.title = ev.collector;
     document.getElementById("collector-list").appendChild(li);
     state.collectors[ev.collector] = li;
   }
   li.className = "running";
-  li.querySelector(".c-icon").textContent = "◐";
+  li.querySelector(".c-icon").textContent = "›";
   li.querySelector(".c-meta").textContent = "";
   li.querySelector(".c-fill").style.width = "0%";
+  li.scrollIntoView({ block: "nearest" });
 
   // La barra global arranca en lo ya completado y avanza dentro del tramo de
-  // este colector a medida que llega su avance interno.
+  // esta fuente a medida que llega su avance interno.
   setGlobalProgress(ev.index - 1, ev.total, 0);
 }
 
-// onCollectorProgress mueve la barra DENTRO del colector actual. Es lo que
-// evita que se vea congelada durante los 30-60 segundos que tarda la MFT.
+// onCollectorProgress mueve la barra DENTRO de la fuente actual. Es lo que
+// evita que se vea congelada durante los segundos que tarda la MFT.
 function onCollectorProgress(ev) {
   var li = state.collectors[ev.collector];
   if (li) {
@@ -160,8 +193,8 @@ function onCollectorProgress(ev) {
   setGlobalProgress(ev.index - 1, ev.total, ev.fraction || 0);
 }
 
-// setGlobalProgress compone el avance total: colectores terminados más la
-// fracción del que está corriendo.
+// setGlobalProgress compone el avance total: fuentes terminadas más la
+// fracción de la que está corriendo.
 function setGlobalProgress(completed, total, fraction) {
   if (!total) return;
   var pct = ((completed + fraction) / total) * 100;
@@ -171,24 +204,29 @@ function setGlobalProgress(completed, total, fraction) {
 
 function onCollectorDone(ev) {
   var li = state.collectors[ev.collector];
-  if (!li) return;
-
-  if (ev.error) {
-    li.className = "failed";
-    li.querySelector(".c-icon").textContent = "!";
-    li.querySelector(".c-meta").textContent = "no disponible";
-    li.title = ev.error;
-  } else {
-    li.className = "done";
-    li.querySelector(".c-icon").textContent = "✓";
-    var n = ev.artifacts || 0;
-    li.querySelector(".c-meta").textContent = n + (n === 1 ? " artefacto" : " artefactos");
-    state.totalArtifacts += n;
+  if (li) {
+    if (ev.error) {
+      li.className = "failed";
+      li.querySelector(".c-icon").textContent = "!";
+      li.querySelector(".c-meta").textContent = "no se pudo leer";
+      li.title = ev.collector + ": " + ev.error;
+    } else {
+      li.className = "done";
+      li.querySelector(".c-icon").textContent = "✓";
+      var n = ev.artifacts || 0;
+      li.querySelector(".c-meta").textContent = n.toLocaleString("es");
+      state.totalArtifacts += n;
+    }
+    li.querySelector(".c-fill").style.width = "100%";
   }
-  li.querySelector(".c-fill").style.width = "100%";
-
   setGlobalProgress(ev.index, ev.total, 0);
   countUp(document.getElementById("progress-artifacts-n"), state.totalArtifacts);
+
+  // El registro se dibuja fuente por fuente, mientras la revisión corre.
+  if (ev.activity) {
+    mergeActivity(ev.activity);
+    renderStrip();
+  }
 }
 
 // onFinding agrega una detección al feed en vivo. La severidad es preliminar:
@@ -206,24 +244,25 @@ function onFinding(ev) {
   }
 
   var item = document.createElement("div");
-  item.className = "live-item lv-" + sev.toLowerCase();
+  item.className = "live-item";
   item.innerHTML =
     '<span class="badge sev-' + sev.toLowerCase() + '"></span>' +
     '<span class="live-title"></span>' +
     '<span class="live-path"></span>';
-  item.querySelector(".badge").textContent = sev;
+  item.querySelector(".badge").textContent = SEV_LABEL[sev] || sev;
   item.querySelector(".live-title").textContent = ev.title || "";
-  // La ruta se muestra en RTL por CSS para que, al recortarse, se vea el
-  // nombre del archivo y no el prefijo C:\Windows\... que se repite siempre.
   item.querySelector(".live-path").textContent = ev.path || "";
-
   feed.insertBefore(item, feed.firstChild);
-  state.liveShown++;
 
   // Podar el final: lo viejo ya se contabilizó en los contadores y va a
   // aparecer completo en la pantalla de resultados.
   while (feed.childNodes.length > MAX_LIVE_NODES) {
     feed.removeChild(feed.lastChild);
+  }
+
+  if (ev.timestamp) {
+    state.markers.push({ t: new Date(ev.timestamp).getTime(), severity: sev, title: ev.title || "", id: null });
+    scheduleStrip();
   }
 }
 
@@ -238,6 +277,7 @@ function renderCounters(bumped) {
       el = document.createElement("span");
       el.id = id;
       el.className = "counter sev-" + k.toLowerCase();
+      el.title = SEV_LABEL[k];
       box.appendChild(el);
     }
     countUp(el, state.live[k]);
@@ -251,114 +291,365 @@ function renderCounters(bumped) {
 }
 
 function onScanError(ev) {
-  show("screen-results");
   setScanning(false);
   document.getElementById("topbar-status").textContent = "Error";
-  var v = document.getElementById("verdict");
-  v.className = "verdict level-incompleto";
-  document.getElementById("verdict-level").textContent = "ERROR";
-  document.getElementById("verdict-summary").textContent =
-    "El escaneo no pudo completarse.";
+  document.getElementById("verdict").className = "screen-verdict verdict level-incompleto";
+  document.getElementById("verdict-level").textContent = "No se pudo revisar";
+  document.getElementById("verdict-summary").textContent = "La revisión se interrumpió antes de producir un resultado.";
   var note = document.getElementById("verdict-note");
   note.textContent = ev.error || "";
   note.hidden = !ev.error;
+  show("screen-results");
 }
 
 function onScanDone(ev) {
-  show("screen-results");
   setScanning(false);
-  document.getElementById("topbar-status").textContent = "Completado";
+  document.getElementById("topbar-status").textContent = "Revisión terminada";
 
   var rep = ev.report || {};
   state.report = rep;
   state.reportPath = ev.reportPath || "";
-  var verdict = rep.verdict || {};
   var findings = rep.findings || [];
 
-  renderVerdict(verdict, rep.status);
+  // El reporte trae la actividad completa y los hallazgos definitivos:
+  // reemplazan lo que se fue dibujando en vivo.
+  if (rep.activity) {
+    state.activity = null;
+    mergeActivity(rep.activity);
+  }
+  state.markers = [];
+  for (var i = 0; i < findings.length; i++) {
+    var f = findings[i];
+    if (f.timestamp && f.severity !== "INFO") {
+      state.markers.push({ t: new Date(f.timestamp).getTime(), severity: f.severity, title: f.title || "", id: f.id });
+    }
+  }
+  state.revealStrip = true;
+
+  renderVerdict(rep.verdict || {}, rep.status);
   renderContext(rep);
   renderDistribution(findings);
   renderFilters(findings);
   renderFindings(findings);
 
-  var pathEl = document.getElementById("report-path");
-  pathEl.textContent = state.reportPath;
+  document.getElementById("report-path").textContent = state.reportPath;
   document.getElementById("copy-btn").hidden = !state.reportPath;
+  show("screen-results");
 }
 
-// ---------------------------------------------------------------- render
+// ---------------------------------------------------------------- registro
+
+var LANES = [
+  { key: "execution", label: "Ejecución", ink: "var(--ink-exec)" },
+  { key: "files", label: "Archivos", ink: "var(--ink-files)" },
+  { key: "session", label: "Sesión", ink: "var(--ink-session)" },
+];
+var STRIP = { h: 150, gutter: 92, right: 16, rail: 24, lane: 34, axis: 22 };
+var HOUR = 3600000;
+var SVGNS = "http://www.w3.org/2000/svg";
+
+function svgEl(name, attrs, text) {
+  var el = document.createElementNS(SVGNS, name);
+  for (var k in attrs) el.setAttribute(k, attrs[k]);
+  if (text !== undefined) el.textContent = text;
+  return el;
+}
+
+// mergeActivity suma la actividad de una fuente a la acumulada. Todas las
+// fuentes comparten origen y resolución, así que se suma índice a índice.
+function mergeActivity(act) {
+  if (!act || !act.channels) return;
+  var fromMs = new Date(act.from).getTime();
+  if (!state.activity) {
+    state.activity = { from: fromMs, channels: { execution: [], files: [], session: [] } };
+  }
+  // Una revisión que cruza el cambio de hora desplaza el origen una posición.
+  var shift = Math.round((fromMs - state.activity.from) / HOUR);
+  for (var key in state.activity.channels) {
+    var src = act.channels[key] || [];
+    var dst = state.activity.channels[key];
+    for (var i = 0; i < src.length; i++) {
+      var j = i + shift;
+      if (j < 0) continue;
+      dst[j] = (dst[j] || 0) + src[i];
+    }
+  }
+}
+
+var stripTimer = null;
+function scheduleStrip() {
+  clearTimeout(stripTimer);
+  stripTimer = setTimeout(renderStrip, 120);
+}
+
+function setRange(btn) {
+  state.range = parseInt(btn.getAttribute("data-range"), 10);
+  var all = btn.parentNode.querySelectorAll("button");
+  for (var i = 0; i < all.length; i++) {
+    all[i].classList.toggle("on", all[i] === btn);
+    all[i].setAttribute("aria-pressed", all[i] === btn ? "true" : "false");
+  }
+  renderStrip();
+}
+
+// renderStrip dibuja el registro: tres carriles de tinta sobre papel, una
+// marca por hora cuya altura es el logaritmo de lo que pasó en esa hora. Se
+// redibuja entero cada vez: son unos cientos de nodos.
+function renderStrip() {
+  var paper = document.getElementById("paper");
+  var svg = document.getElementById("strip");
+  var w = paper.clientWidth;
+  if (!w) return;
+  var H = STRIP.h;
+  svg.setAttribute("viewBox", "0 0 " + w + " " + H);
+  svg.setAttribute("width", w);
+  svg.setAttribute("height", H);
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+  var act = state.activity;
+  var total = 720;
+  var range = state.range;
+  var start = total - range;
+  var x0 = STRIP.gutter;
+  var x1 = w - STRIP.right;
+  var bw = (x1 - x0) / range;
+  var top = STRIP.rail;
+  var bottom = H - STRIP.axis;
+  // Sin datos todavía, el origen se calcula desde ahora para poder dibujar
+  // igual la cuadrícula y las fechas sobre el papel en blanco.
+  var fromMs = act ? act.from : Math.floor(Date.now() / HOUR) * HOUR - (total - 1) * HOUR;
+
+  svg.appendChild(svgEl("rect", { x: 0, y: 0, width: x0 - 8, height: H, "class": "s-gutter" }));
+
+  // Cuadrícula de tiempo.
+  var grid = svgEl("g", {});
+  var dayIndex = 0;
+  for (var i = start; i <= total; i++) {
+    var d = new Date(fromMs + i * HOUR);
+    var x = x0 + (i - start) * bw;
+    var hr = d.getHours();
+    if (hr === 0) {
+      grid.appendChild(svgEl("line", { x1: x, y1: top - 6, x2: x, y2: bottom, "class": "s-day" }));
+      var labelEvery = range === 720 ? 5 : 1;
+      if (dayIndex % labelEvery === 0 && x < x1 - 40) {
+        var txt = range === 720
+          ? d.toLocaleDateString("es", { day: "numeric", month: "short" })
+          : d.toLocaleDateString("es", { weekday: "short", day: "numeric" });
+        grid.appendChild(svgEl("text", { x: x + 4, y: H - 7, "class": "s-axis" }, txt));
+      }
+      dayIndex++;
+    } else if (range === 48 && hr % 6 === 0) {
+      grid.appendChild(svgEl("line", { x1: x, y1: top, x2: x, y2: bottom, "class": "s-grid" }));
+      grid.appendChild(svgEl("text", { x: x + 4, y: H - 7, "class": "s-axis" }, (hr < 10 ? "0" : "") + hr + ":00"));
+    } else if (range === 168 && hr === 12) {
+      grid.appendChild(svgEl("line", { x1: x, y1: top, x2: x, y2: bottom, "class": "s-grid" }));
+    }
+  }
+  svg.appendChild(grid);
+
+  // Carriles.
+  var ink = svgEl("g", {});
+  var any = false;
+  for (var l = 0; l < LANES.length; l++) {
+    var lane = LANES[l];
+    var base = top + (l + 1) * STRIP.lane - 3;
+    svg.appendChild(svgEl("line", { x1: x0, y1: base + .5, x2: x1, y2: base + .5, "class": "s-base" }));
+    var label = svgEl("text", { x: 12, y: base - 9, "class": "s-lane" }, lane.label);
+    label.setAttribute("fill", lane.ink);
+    svg.appendChild(label);
+
+    var series = act ? act.channels[lane.key] || [] : [];
+    var sum = 0;
+    for (var b = start; b < total; b++) {
+      var c = series[b] || 0;
+      if (!c) continue;
+      sum += c;
+      var hgt = Math.min(STRIP.lane - 7, 3 + Math.log(c + 1) / Math.LN2 * 4.1);
+      var bar = svgEl("rect", {
+        x: (x0 + (b - start) * bw).toFixed(2), y: (base - hgt).toFixed(2),
+        width: Math.max(1, bw - (bw > 3 ? 1 : 0)).toFixed(2), height: hgt.toFixed(2),
+      });
+      bar.setAttribute("fill", lane.ink);
+      ink.appendChild(bar);
+    }
+    if (sum) any = true;
+    if (act) {
+      svg.appendChild(svgEl("text", { x: 12, y: base + 3, "class": "s-count" }, sum.toLocaleString("es")));
+    }
+  }
+  svg.appendChild(ink);
+
+  // Marcas de hallazgos sobre el riel superior.
+  var rail = svgEl("g", {});
+  for (var m = 0; m < state.markers.length; m++) {
+    var mk = state.markers[m];
+    var mx = x0 + ((mk.t - fromMs) / HOUR - start) * bw;
+    if (mx < x0 || mx > x1) continue;
+    var color = "var(--sev-" + mk.severity.toLowerCase() + ")";
+    var drop = svgEl("line", { x1: mx, y1: 16, x2: mx, y2: bottom, "class": "s-drop" });
+    drop.setAttribute("stroke", color);
+    rail.appendChild(drop);
+    var g = svgEl("g", { "class": "s-marker" });
+    var tri = svgEl("path", { d: "M" + (mx - 5) + " 5 L" + (mx + 5) + " 5 L" + mx + " 16 Z" });
+    tri.setAttribute("fill", color);
+    g.appendChild(tri);
+    g.appendChild(svgEl("title", {}, (SEV_LABEL[mk.severity] || mk.severity) + " · " + mk.title + " · " + fmtDateTime(mk.t)));
+    if (mk.id) {
+      g.setAttribute("tabindex", "0");
+      g.setAttribute("role", "button");
+      g.setAttribute("aria-label", "Ir al hallazgo: " + mk.title);
+      (function (id) {
+        g.addEventListener("click", function () { jumpToFinding(id); });
+        g.addEventListener("keydown", function (e) {
+          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); jumpToFinding(id); }
+        });
+      })(mk.id);
+    }
+    rail.appendChild(g);
+  }
+
+  // Descubrir el papel de izquierda a derecha, una sola vez.
+  if (state.revealStrip && document.body.getAttribute("data-screen") === "results") {
+    state.revealStrip = false;
+    svg.appendChild(svgEl("rect", { x: x0, y: 0, width: x1 - x0 + 1, height: bottom + 1, "class": "s-cover reveal" }));
+  }
+  svg.appendChild(rail);
+
+  // Ahora.
+  svg.appendChild(svgEl("line", { x1: x1, y1: 0, x2: x1, y2: bottom, "class": "s-now" }));
+  svg.appendChild(svgEl("text", { x: x1 - 4, y: H - 7, "class": "s-now-label", "text-anchor": "end" }, "ahora"));
+
+  var emptyEl = document.getElementById("paper-empty");
+  if (document.body.getAttribute("data-screen") === "consent") {
+    emptyEl.hidden = false;
+  } else if (act && !any && !document.body.classList.contains("scanning")) {
+    emptyEl.textContent = "Ninguna fuente aportó actividad con fecha en este rango.";
+    emptyEl.hidden = false;
+  } else {
+    emptyEl.hidden = true;
+  }
+}
+
+// jumpToFinding lleva del registro al hallazgo: limpia los filtros si lo
+// estaban ocultando, abre su grupo y lo despliega.
+function jumpToFinding(id) {
+  var el = state.findingEls[id];
+  if (!el || !document.body.contains(el)) {
+    state.filters.text = "";
+    document.getElementById("search").value = "";
+    for (var k in state.filters.sev) state.filters.sev[k] = true;
+    renderFilters(state.report.findings || []);
+    renderFindings(state.report.findings || []);
+    el = state.findingEls[id];
+  }
+  if (!el) return;
+  var group = el.closest(".group");
+  if (group) group.classList.add("open");
+  if (!el.classList.contains("open")) el.querySelector(".finding-main").click();
+  el.scrollIntoView({ block: "center", behavior: "smooth" });
+  el.classList.remove("flash");
+  void el.offsetWidth;
+  el.classList.add("flash");
+}
+
+window.addEventListener("resize", scheduleStrip);
+
+// ---------------------------------------------------------------- veredicto
 
 function renderVerdict(verdict, status) {
   var level = verdict.level || "LIMPIO";
-  var box = document.getElementById("verdict");
-  box.className = "verdict level-" + level.toLowerCase();
+  document.getElementById("verdict").className = "screen-verdict verdict level-" + level.toLowerCase();
+  document.getElementById("verdict-level").textContent = LEVEL_LABEL[level] || level;
+  document.getElementById("verdict-summary").textContent = verdictSentence(level, verdict);
 
-  var LABEL = {
-    LIMPIO: "SIN HALLAZGOS",
-    INCOMPLETO: "REVISIÓN PARCIAL",
-    SOSPECHOSO: "REQUIERE REVISIÓN",
-    EVIDENCIA_FUERTE: "EVIDENCIA FUERTE",
-  };
-  var lvl = document.getElementById("verdict-level");
-  lvl.textContent = LABEL[level] || level;
-  // Reinicia la animación por si se vuelve a renderizar.
-  lvl.classList.remove("reveal-type");
-  void lvl.offsetWidth;
-  lvl.classList.add("reveal-type");
-
-  document.getElementById("verdict-summary").textContent = verdict.summary || "";
-
-  var noteEl = document.getElementById("verdict-note");
   var notes = [];
   if (status === "ABORTED") {
-    notes.push("El escaneo se detuvo antes de terminar. Este resultado cubre solo lo revisado hasta ese momento.");
+    notes.push("La revisión se detuvo antes de terminar. Este resultado cubre solo lo revisado hasta ese momento.");
   }
   if (verdict.failedCollectors && verdict.failedCollectors.length) {
-    notes.push(
-      "Revisión parcial: no se pudo leer " +
-      verdict.failedCollectors.join(", ") +
-      ". Lo que esa fuente hubiera mostrado no está en este resultado.");
+    var names = [];
+    for (var i = 0; i < verdict.failedCollectors.length; i++) names.push(collectorLabel(verdict.failedCollectors[i]));
+    notes.push("No se pudo leer: " + names.join(", ") + ". Lo que esas fuentes hubieran mostrado no está en este resultado.");
   }
+  var noteEl = document.getElementById("verdict-note");
   noteEl.textContent = notes.join(" ");
   noteEl.hidden = notes.length === 0;
 }
 
-// renderContext arma la línea de contexto de la máquina: lo que hace falta
-// para leer los hallazgos. Una instalación de hace tres días explica sola un
-// Prefetch vacío; un uptime de 4 minutos, un escaneo hecho recién reiniciado.
+function plural(n, one, many) { return n + " " + (n === 1 ? one : many); }
+
+// verdictSentence dice en una oración lo que el titular no dice: cuánto hay
+// y qué hacer con eso. El resumen que trae el reporte repite el nivel, que
+// acá ya está escrito en grande justo arriba.
+function verdictSentence(level, verdict) {
+  var counts = { CRITICAL: 0, HIGH: 0, MEDIUM: 0 };
+  var findings = (state.report && state.report.findings) || [];
+  for (var i = 0; i < findings.length; i++) {
+    if (counts[findings[i].severity] !== undefined) counts[findings[i].severity]++;
+  }
+  switch (level) {
+    case "LIMPIO":
+      return "Ninguna fuente mostró señales de cheats, macros ni manipulación de rastros.";
+    case "INCOMPLETO":
+      return "No apareció nada para revisar, pero " +
+        plural((verdict.failedCollectors || []).length, "fuente no se pudo leer", "fuentes no se pudieron leer") +
+        ": el resultado no es concluyente.";
+    case "SOSPECHOSO":
+      return "Hay " + plural(counts.HIGH, "hallazgo de severidad alta", "hallazgos de severidad alta") + " y " +
+        plural(counts.MEDIUM, "de severidad media", "de severidad media") + " para revisar con la persona.";
+    case "EVIDENCIA_FUERTE":
+      return "Hay " + plural(counts.CRITICAL, "hallazgo crítico", "hallazgos críticos") + " y " +
+        plural(counts.HIGH, "de severidad alta", "de severidad alta") +
+        ". Revisá la evidencia de cada uno antes de decidir.";
+  }
+  return verdict.summary || "";
+}
+
+// renderContext arma la ficha de la máquina: lo que hace falta para leer los
+// hallazgos. Una instalación de hace tres días explica sola un registro casi
+// vacío; un encendido de 4 minutos, una revisión hecha recién reiniciado.
 function renderContext(rep) {
   var m = rep.machine || {};
-  var parts = [];
-  if (m.build) parts.push("Windows " + m.build);
-  if (m.installDate) parts.push("instalado el " + fmtDate(m.installDate));
-  if (typeof m.uptimeMinutes === "number") parts.push("encendido hace " + fmtMinutes(m.uptimeMinutes));
-  if (m.vm) parts.push("máquina virtual");
+  var rows = [];
+  if (m.build) rows.push(["Windows", m.build]);
+  if (m.installDate) rows.push(["Instalado", fmtDate(m.installDate)]);
+  if (typeof m.uptimeMinutes === "number") rows.push(["Encendido hace", fmtMinutes(m.uptimeMinutes)]);
+  if (m.vm) rows.push(["Entorno", "máquina virtual"]);
   var cols = rep.collectors || [];
   if (cols.length) {
     var failed = 0;
     for (var i = 0; i < cols.length; i++) if (cols[i].error) failed++;
-    parts.push((cols.length - failed) + " de " + cols.length + " fuentes leídas");
+    rows.push(["Fuentes leídas", (cols.length - failed) + " de " + cols.length]);
   }
   if (rep.startedAt && rep.endedAt) {
     var secs = Math.round((new Date(rep.endedAt) - new Date(rep.startedAt)) / 1000);
-    if (secs > 0) parts.push("escaneo de " + fmtSeconds(secs));
+    if (secs > 0) rows.push(["Duración", fmtSeconds(secs)]);
   }
-  if (rep.agentVersion) parts.push("agente " + rep.agentVersion);
-  var el = document.getElementById("context");
-  el.textContent = parts.join("  ·  ");
-  el.hidden = parts.length === 0;
+  if (rep.sessionId) rows.push(["Sesión", rep.sessionId]);
+  if (rep.agentVersion) rows.push(["Agente", rep.agentVersion]);
+
+  var dl = document.getElementById("context");
+  dl.innerHTML = "";
+  for (var r = 0; r < rows.length; r++) {
+    var dt = document.createElement("dt");
+    dt.textContent = rows[r][0];
+    var dd = document.createElement("dd");
+    dd.textContent = rows[r][1];
+    dl.appendChild(dt);
+    dl.appendChild(dd);
+  }
 }
 
-function fmtDate(iso) {
-  var d = new Date(iso);
-  if (isNaN(d.getTime())) return String(iso);
+function fmtDate(v) {
+  var d = new Date(v);
+  if (isNaN(d.getTime())) return String(v);
   return d.toLocaleDateString("es", { year: "numeric", month: "short", day: "numeric" });
 }
 
-function fmtDateTime(iso) {
-  var d = new Date(iso);
-  if (isNaN(d.getTime())) return String(iso);
-  return d.toLocaleString("es", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+function fmtDateTime(v) {
+  var d = new Date(v);
+  if (isNaN(d.getTime())) return String(v);
+  return d.toLocaleString("es", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 function fmtMinutes(min) {
@@ -373,15 +664,13 @@ function fmtSeconds(s) {
   return Math.floor(s / 60) + " min " + (s % 60) + " s";
 }
 
-// renderDistribution dibuja la proporción real de la evidencia. Un CRITICAL
+// renderDistribution dibuja la proporción real de la evidencia. Un crítico
 // entre 300 hallazgos se ve del tamaño que le corresponde, no como titular.
 function renderDistribution(findings) {
   var counts = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, INFO: 0 };
   for (var i = 0; i < findings.length; i++) {
-    var s = findings[i].severity;
-    if (counts[s] !== undefined) counts[s]++;
+    if (counts[findings[i].severity] !== undefined) counts[findings[i].severity]++;
   }
-
   var total = findings.length || 1;
   var bar = document.getElementById("dist-bar");
   var legend = document.getElementById("dist-legend");
@@ -395,23 +684,19 @@ function renderDistribution(findings) {
 
     var seg = document.createElement("div");
     seg.className = "dist-seg";
-    // Arranca en cero y crece: la proporción se "mide" en vez de aparecer ya
-    // resuelta. El transition de .dist-seg hace el resto.
     seg.style.width = "0%";
     seg.style.background = color;
-    seg.title = counts[k] + " " + k;
     bar.appendChild(seg);
     (function (node, pct) {
-      setTimeout(function () { node.style.width = pct + "%"; }, 260);
+      setTimeout(function () { node.style.width = pct + "%"; }, 200);
     })(seg, (counts[k] / total) * 100);
 
     var item = document.createElement("span");
     item.className = "dist-item";
-    item.innerHTML =
-      '<span class="dist-swatch" style="background:' + color + '"></span>' +
-      '<span class="dist-num"></span><span></span>';
+    item.innerHTML = '<span class="dist-swatch"></span><span class="dist-num"></span><span></span>';
+    item.querySelector(".dist-swatch").style.background = color;
     item.querySelector(".dist-num").textContent = counts[k];
-    item.querySelectorAll("span")[2].textContent = k;
+    item.querySelectorAll("span")[2].textContent = (SEV_LABEL[k] || k).toLowerCase();
     legend.appendChild(item);
   }
 }
@@ -432,7 +717,7 @@ function renderFilters(findings) {
     chip.setAttribute("data-sev", k);
     chip.setAttribute("aria-pressed", state.filters.sev[k] ? "true" : "false");
     chip.innerHTML = '<span class="chip-name"></span><span class="chip-count"></span>';
-    chip.querySelector(".chip-name").textContent = k;
+    chip.querySelector(".chip-name").textContent = SEV_LABEL[k] || k;
     chip.querySelector(".chip-count").textContent = counts[k];
     chip.disabled = counts[k] === 0;
     chip.onclick = function () {
@@ -473,21 +758,21 @@ function passesFilters(f) {
 
 function renderFindings(all) {
   var container = document.getElementById("findings");
+  state.findingEls = {};
   var findings = [];
   for (var i = 0; i < all.length; i++) {
     if (passesFilters(all[i])) findings.push(all[i]);
   }
-  var countEl = document.getElementById("filter-count");
-  countEl.textContent = findings.length === all.length
+  document.getElementById("filter-count").textContent = findings.length === all.length
     ? all.length + (all.length === 1 ? " hallazgo" : " hallazgos")
     : findings.length + " de " + all.length;
 
   if (!all.length) {
-    container.innerHTML = '<div class="empty">No se registraron hallazgos.</div>';
+    container.innerHTML = '<p class="empty">La revisión no registró ningún hallazgo.</p>';
     return;
   }
   if (!findings.length) {
-    container.innerHTML = '<div class="empty">Ningún hallazgo coincide con el filtro.</div>';
+    container.innerHTML = '<p class="empty">Ningún hallazgo coincide con el filtro. Probá con otra severidad o borrá la búsqueda.</p>';
     return;
   }
 
@@ -497,25 +782,19 @@ function renderFindings(all) {
     return;
   }
 
-  // Agrupar por categoría.
   var groups = {};
   for (var k = 0; k < findings.length; k++) {
-    var f = findings[k];
-    var cat = f.category || "EXECUTION";
+    var cat = findings[k].category || "EXECUTION";
     if (!groups[cat]) groups[cat] = [];
-    groups[cat].push(f);
+    groups[cat].push(findings[k]);
   }
-
-  // Ordenar categorías por su hallazgo más grave.
+  // Las categorías se ordenan por su hallazgo más grave.
   var cats = Object.keys(groups);
-  cats.sort(function (a, b) {
-    return maxSeverity(groups[b]) - maxSeverity(groups[a]);
-  });
+  cats.sort(function (a, b) { return maxSeverity(groups[b]) - maxSeverity(groups[a]); });
 
   for (var c = 0; c < cats.length; c++) {
-    var g = buildGroup(cats[c], groups[cats[c]]);
-    // Escalonado: los grupos entran de a uno, el más grave primero.
-    g.style.animationDelay = (0.28 + c * 0.09).toFixed(2) + "s";
+    var g = buildGroup(CATEGORY_LABEL[cats[c]] || cats[c], groups[cats[c]], true);
+    g.style.animationDelay = (0.2 + c * 0.07).toFixed(2) + "s";
     container.appendChild(g);
   }
 }
@@ -529,16 +808,10 @@ function buildTimeline(findings) {
   }
   dated.sort(function (a, b) { return new Date(b.timestamp) - new Date(a.timestamp); });
 
-  var group = document.createElement("div");
-  group.className = "group open";
-  var head = document.createElement("div");
-  head.className = "group-head";
-  head.innerHTML = '<span class="group-caret">▶</span><span class="group-title"></span><span class="group-count"></span>';
-  head.querySelector(".group-title").textContent = "Línea de tiempo";
-  head.querySelector(".group-count").textContent = dated.length + " con fecha, " + undated.length + " sin fecha";
-  head.onclick = function () { group.classList.toggle("open"); };
-  var body = document.createElement("div");
-  body.className = "group-body";
+  var group = buildGroup("Línea de tiempo", [], false);
+  group.classList.add("open");
+  group.querySelector(".group-count").textContent = dated.length + " con fecha · " + undated.length + " sin fecha";
+  var body = group.querySelector(".group-body");
   var lastDay = "";
   for (var j = 0; j < dated.length; j++) {
     var day = fmtDate(dated[j].timestamp);
@@ -558,8 +831,6 @@ function buildTimeline(findings) {
     body.appendChild(sep2);
     for (var u = 0; u < undated.length; u++) body.appendChild(buildFinding(undated[u]));
   }
-  group.appendChild(head);
-  group.appendChild(body);
   return group;
 }
 
@@ -572,35 +843,31 @@ function maxSeverity(list) {
   return m;
 }
 
-function buildGroup(category, items) {
-  items.sort(function (a, b) {
-    return (SEV_ORDER[b.severity] || 0) - (SEV_ORDER[a.severity] || 0);
-  });
-
+function buildGroup(title, items, sortBySeverity) {
+  if (sortBySeverity) {
+    items.sort(function (a, b) { return (SEV_ORDER[b.severity] || 0) - (SEV_ORDER[a.severity] || 0); });
+  }
   var group = document.createElement("div");
   group.className = "group";
-  // Las categorías que solo tienen INFO arrancan colapsadas: son ruido para
-  // quien mira el resultado, pero siguen disponibles.
+  // Las categorías que solo tienen informativos arrancan cerradas: son ruido
+  // para quien mira el resultado, pero siguen disponibles.
   if (maxSeverity(items) > SEV_ORDER.INFO) group.classList.add("open");
 
   var head = document.createElement("div");
   head.className = "group-head";
-  head.innerHTML =
-    '<span class="group-caret">▶</span>' +
-    '<span class="group-title"></span>' +
-    '<span class="group-count"></span>';
-  head.querySelector(".group-title").textContent = CATEGORY_LABEL[category] || category;
-  head.querySelector(".group-count").textContent =
-    items.length + (items.length === 1 ? " hallazgo" : " hallazgos");
-  head.onclick = function () {
-    group.classList.toggle("open");
+  head.setAttribute("role", "button");
+  head.setAttribute("tabindex", "0");
+  head.innerHTML = '<span class="group-caret">▶</span><span class="group-title"></span><span class="group-count"></span>';
+  head.querySelector(".group-title").textContent = title;
+  head.querySelector(".group-count").textContent = items.length + (items.length === 1 ? " hallazgo" : " hallazgos");
+  head.onclick = function () { group.classList.toggle("open"); };
+  head.onkeydown = function (e) {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); group.classList.toggle("open"); }
   };
 
   var body = document.createElement("div");
   body.className = "group-body";
-  for (var i = 0; i < items.length; i++) {
-    body.appendChild(buildFinding(items[i]));
-  }
+  for (var i = 0; i < items.length; i++) body.appendChild(buildFinding(items[i]));
 
   group.appendChild(head);
   group.appendChild(body);
@@ -618,8 +885,7 @@ function revealable(path) {
 }
 
 // parseEvidence separa el prefijo de deduplicación ("N eventos sobre este
-// artefacto. ") del JSON del artefacto. Devuelve {count, data} con data
-// null si no es JSON.
+// artefacto. ") del JSON del artefacto.
 function parseEvidence(evidence) {
   var out = { count: 0, data: null, raw: evidence || "" };
   var s = evidence || "";
@@ -632,7 +898,7 @@ function parseEvidence(evidence) {
     var parsed = JSON.parse(s);
     if (parsed && typeof parsed === "object") out.data = parsed;
   } catch (e) {
-    // texto plano (resúmenes, errores de colector): se muestra tal cual
+    // texto plano (resúmenes, errores de fuente): se muestra tal cual
   }
   return out;
 }
@@ -647,38 +913,61 @@ function signatureOf(data) {
 function buildFinding(f) {
   var el = document.createElement("div");
   el.className = "finding";
+  state.findingEls[f.id] = el;
 
-  var sev = (f.severity || "INFO").toLowerCase();
+  var sev = f.severity || "INFO";
   el.innerHTML =
-    '<span class="badge sev-' + sev + '"></span>' +
     '<div class="finding-main">' +
-    '<div class="finding-title"></div>' +
-    '<div class="finding-path"></div>' +
-    '<div class="finding-meta"></div>' +
+    '<span class="badge sev-' + sev.toLowerCase() + '"></span>' +
+    '<div class="f-body"><div class="finding-title"></div><div class="finding-path"></div></div>' +
+    '<div class="f-side"></div>' +
     "</div>";
-
-  el.querySelector(".badge").textContent = f.severity || "INFO";
-  el.querySelector(".finding-title").textContent = f.title || "";
-  el.querySelector(".finding-path").textContent = f.artifact || "";
+  el.querySelector(".badge").textContent = SEV_LABEL[sev] || sev;
+  var titleEl = el.querySelector(".finding-title");
+  var pathEl = el.querySelector(".finding-path");
+  titleEl.textContent = f.title || "";
+  pathEl.textContent = f.artifact || "";
+  // Las filas de resumen y de fuente caída traen el identificador técnico
+  // de la fuente: se muestran con el nombre que la persona reconoce y con su
+  // texto como nota en prosa, no como ruta.
+  var id = f.id || "";
+  if (id.indexOf("summary-") === 0) {
+    titleEl.textContent = collectorLabel(f.artifact) + ": actividad normal";
+    pathEl.textContent = f.evidence || "";
+    pathEl.classList.add("note");
+  } else if (id.indexOf("collector-error-") === 0) {
+    titleEl.textContent = "No se pudo leer: " + collectorLabel(f.artifact);
+    pathEl.textContent = f.evidence || "";
+    pathEl.classList.add("note");
+  }
 
   var ev = parseEvidence(f.evidence);
-  var meta = el.querySelector(".finding-meta");
-  var metaParts = [];
-  if (f.timestamp) metaParts.push(fmtDateTime(f.timestamp));
-  if (ev.count > 1) metaParts.push(ev.count + " eventos");
-  if (typeof f.confidence === "number" && f.confidence > 0) metaParts.push("confianza " + Math.round(f.confidence * 100) + "%");
-  meta.textContent = metaParts.join("  ·  ");
+  var side = el.querySelector(".f-side");
+  if (f.timestamp) {
+    var time = document.createElement("span");
+    time.className = "f-time";
+    time.textContent = fmtDateTime(f.timestamp);
+    side.appendChild(time);
+  }
   var sig = signatureOf(ev.data);
   if (sig) {
-    var badge = document.createElement("span");
-    badge.className = "sig sig-" + sig.status;
-    badge.textContent = SIG_LABEL[sig.status] + (sig.signer ? ": " + sig.signer : "");
-    meta.appendChild(badge);
+    var s = document.createElement("span");
+    s.className = "sig sig-" + sig.status;
+    s.textContent = SIG_LABEL[sig.status] + (sig.signer ? " · " + sig.signer : "");
+    side.appendChild(s);
   }
-  if (!meta.textContent) meta.hidden = true;
+  var metaParts = [];
+  if (ev.count > 1) metaParts.push(ev.count + " eventos");
+  if (typeof f.confidence === "number" && f.confidence > 0) metaParts.push("confianza " + Math.round(f.confidence * 100) + "%");
+  if (metaParts.length) {
+    var meta = document.createElement("span");
+    meta.className = "f-meta";
+    meta.textContent = metaParts.join(" · ");
+    side.appendChild(meta);
+  }
 
-  // Evidencia expandible: se construye al primer clic. Con 400 hallazgos,
-  // renderizar 400 tablas de entrada castigaría la pantalla de resultados.
+  // La evidencia se construye al primer clic. Con 400 hallazgos, renderizar
+  // 400 tablas de entrada castigaría la pantalla de resultados.
   var main = el.querySelector(".finding-main");
   main.setAttribute("role", "button");
   main.setAttribute("tabindex", "0");
@@ -696,16 +985,16 @@ function buildFinding(f) {
   if (revealable(f.artifact)) {
     var btn = document.createElement("button");
     btn.className = "reveal";
-    btn.textContent = "\u{1F5C1}";
+    btn.innerHTML = FOLDER_ICON;
     btn.title = "Abrir la ubicación en el explorador";
     btn.setAttribute("aria-label", "Abrir la ubicación de " + (f.artifact || ""));
-    btn.onclick = function (e) {
-      e.stopPropagation();
+    btn.onclick = function () {
       // El backend valida de nuevo: el archivo puede haber sido borrado, en
       // cuyo caso abre el directorio que lo contenía.
       window.revealPath(f.artifact).then(function (ok) {
         if (!ok) {
           btn.title = "La ubicación ya no existe";
+          toast("La ubicación ya no existe");
           return;
         }
         btn.classList.add("done");
@@ -814,38 +1103,39 @@ function legacyCopy(text) {
 function copyReportPath() {
   if (!state.reportPath) return;
   copyText(state.reportPath).then(function (ok) {
-    toast(ok ? "Ruta copiada" : "No se pudo copiar");
+    toast(ok ? "Ruta copiada" : "No se pudo copiar la ruta");
   });
 }
 
-// exportHTML arma una copia estática de la pantalla de resultados, con toda
-// la evidencia desplegada y sin controles, y se la pasa al backend para que
-// la escriba junto al reporte. Es lo que se manda a alguien que no va a
-// abrir un JSON.
+// onExportClick arma una copia estática de la pantalla de resultados, con
+// toda la evidencia desplegada y sin controles, y se la pasa al backend para
+// que la escriba junto al reporte. Es lo que se le manda a alguien que no va
+// a abrir un JSON. Sale en papel: el mismo documento, con la paleta clara.
 function onExportClick() {
   if (!state.report) return;
   // Desplegar toda la evidencia antes de clonar, para que el archivo sea
-  // completo aunque el usuario no haya abierto nada.
-  var items = document.querySelectorAll("#findings .finding");
-  for (var i = 0; i < items.length; i++) {
-    if (!items[i].querySelector(".finding-evidence")) {
-      items[i].querySelector(".finding-main").click();
-      items[i].querySelector(".finding-main").click();
-    }
+  // completo aunque nadie haya abierto nada.
+  var all = state.report.findings || [];
+  for (var i = 0; i < all.length; i++) {
+    var node = state.findingEls[all[i].id];
+    if (node) ensureEvidence(node, parseEvidence(all[i].evidence));
   }
   var root = document.documentElement.cloneNode(true);
-  var scripts = root.querySelectorAll("script");
-  for (var s = 0; s < scripts.length; s++) scripts[s].remove();
-  var drop = root.querySelectorAll("#screen-consent, #screen-scan, #statusbar, .results-actions, .reveal, #toast");
+  var drop = root.querySelectorAll("script, #screen-consent, #screen-scan, #statusbar, #toast, .results-actions, .reveal, .seg, .pen, .filter-bar, .s-cover");
   for (var d = 0; d < drop.length; d++) drop[d].remove();
-  root.querySelector("body").classList.add("exported");
-  var stamp = document.createElement("div");
+  var body = root.querySelector("body");
+  body.classList.add("exported");
+  body.classList.remove("scanning");
+  var stamp = document.createElement("p");
   stamp.className = "export-stamp";
   stamp.textContent = "Exportado el " + new Date().toLocaleString("es") + " desde " + state.reportPath +
     " · sesión " + (state.report.sessionId || "") + " · La versión firmada y verificable es el archivo JSON.";
-  root.querySelector("#screen-results").insertBefore(stamp, root.querySelector("#screen-results").firstChild);
-  var html = "<!DOCTYPE html>\n" + root.outerHTML;
-  window.exportHTML(html).then(function (path) {
+  var main = root.querySelector("main");
+  main.insertBefore(stamp, main.firstChild);
+  window.exportHTML("<!DOCTYPE html>\n" + root.outerHTML).then(function (path) {
     toast(path ? "Exportado a " + path : "No se pudo exportar");
   });
 }
+
+// Primer dibujo: el papel en blanco, con su cuadrícula y sus fechas.
+renderStrip();
