@@ -84,11 +84,11 @@ func rawCopy(src string, w io.Writer) error {
 	}
 	defer vol.Close()
 
-	rec, err := vol.fileRecord(ref)
+	rec, err := vol.FileRecord(ref)
 	if err != nil {
 		return fmt.Errorf("leer el registro MFT de %s: %w", src, err)
 	}
-	layout, err := parseDataLayout(rec)
+	layout, err := resolveLayout(vol, vol, rec)
 	if err != nil {
 		return fmt.Errorf("%s: %w", src, err)
 	}
@@ -182,9 +182,9 @@ func (v *winVolume) ReadAt(offset int64, buf []byte) error {
 	return nil
 }
 
-// fileRecord pide a NTFS el registro MFT del file reference y devuelve sus
-// bytes con el fixup aplicado, listos para parsear atributos.
-func (v *winVolume) fileRecord(ref uint64) ([]byte, error) {
+// FileRecord pide a NTFS el registro MFT del file reference y devuelve sus
+// bytes con el fixup resuelto, listos para parsear atributos.
+func (v *winVolume) FileRecord(ref uint64) ([]byte, error) {
 	in := make([]byte, 8)
 	binary.LittleEndian.PutUint64(in, ref)
 	out := make([]byte, 12+v.record+4096)

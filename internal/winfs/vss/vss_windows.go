@@ -49,13 +49,22 @@ func createViaWmic(volume string) (string, error) {
 }
 
 // createViaPowerShell invoca Win32_ShadowCopy.Create por CIM e imprime solo
-// el ShadowID. El volumen se pasa como argumento posicional, nunca
-// interpolado en el script, para que una ruta rara no pueda inyectar nada.
+// el ShadowID.
+//
+// El volumen va interpolado en el script porque con -Command PowerShell NO
+// expone los argumentos extra como $args: la primera versión los pasaba así,
+// Volume llegaba vacío y CIM respondía "Invalid method Parameter(s)" (lo
+// mostró el primer escaneo real en un runner sin wmic). Para que interpolar
+// sea seguro, antes se exige que el volumen tenga exactamente la forma "C:\".
 func createViaPowerShell(volume string) (string, error) {
-	script := `$r = Invoke-CimMethod -ClassName Win32_ShadowCopy -MethodName Create -Arguments @{Volume=$args[0]}; ` +
-		`if ($r.ReturnValue -ne 0) { exit 1 }; Write-Output $r.ShadowID`
+	if !validVolume(volume) {
+		return "", fmt.Errorf("volumen inválido para el snapshot: %q", volume)
+	}
+	script := `$r = Invoke-CimMethod -ClassName Win32_ShadowCopy -MethodName Create ` +
+		`-Arguments @{Volume='` + volume + `'; Context='ClientAccessible'}; ` +
+		`if ($r.ReturnValue -ne 0) { Write-Output ("ReturnValue=" + $r.ReturnValue); exit 1 }; Write-Output $r.ShadowID`
 	out, err := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-		"-Command", script, volume).CombinedOutput()
+		"-Command", script).CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("Invoke-CimMethod Win32_ShadowCopy falló: %w (%s)", err, strings.TrimSpace(string(out)))
 	}

@@ -63,31 +63,51 @@ func RunLive(ctx context.Context, opts Options, up transport.Uploader) (report.R
 	note := func(format string, args ...any) {
 		opts.Diagnostics = append(opts.Diagnostics, fmt.Sprintf(format, args...))
 	}
+	// Cada hive degrada por separado: copia raw, después snapshot VSS, después
+	// la ruta en vivo. Antes era todo o nada, y un SOFTWARE ilegible tiraba
+	// también un SYSTEM que se había copiado bien.
+	specs := []struct {
+		name, live, rel string
+		dst             *string
+	}{
+		{"SYSTEM", liveSystemHive, `Windows\System32\config\SYSTEM`, &hives.system},
+		{"SOFTWARE", liveSoftwareHive, `Windows\System32\config\SOFTWARE`, &hives.software},
+		{"Amcache.hve", liveAmcacheHive, `Windows\appcompat\Programs\Amcache.hve`, &hives.amcache},
+	}
 	stage, stageErr := lockedfile.NewStage()
-	if stageErr == nil {
+	if stageErr != nil {
+		note("hives: no se pudo crear el directorio temporal: %v", stageErr)
+	} else {
 		// El stage vive hasta que termina el escaneo.
 		defer stage.Close()
-		var staged hivePaths
-		if staged, stageErr = stageHives(stage); stageErr == nil {
-			hives = staged
-		}
 	}
-
-	if stageErr == nil {
-		note("hives: copia por acceso raw NTFS")
-	} else {
-		note("hives: la copia raw falló: %v", stageErr)
-		if snap, vssErr := vss.Create(`C:\`); vssErr == nil {
-			defer snap.Close()
-			hives = hivePaths{
-				system:   vss.PathIn(snap, `Windows\System32\config\SYSTEM`),
-				software: vss.PathIn(snap, `Windows\System32\config\SOFTWARE`),
-				amcache:  vss.PathIn(snap, `Windows\appcompat\Programs\Amcache.hve`),
+	var pending []int
+	for i, s := range specs {
+		if stage != nil {
+			copied, err := stage.Copy(s.live)
+			if err == nil {
+				*s.dst = copied
+				note("hive %s: copia por acceso raw NTFS", s.name)
+				continue
 			}
-			note("hives: snapshot VSS")
-		} else {
+			note("hive %s: la copia raw falló: %v", s.name, err)
+		}
+		pending = append(pending, i)
+	}
+	if len(pending) > 0 {
+		snap, vssErr := vss.Create(`C:\`)
+		if vssErr != nil {
 			note("hives: el snapshot VSS falló: %v", vssErr)
-			note("hives: se usan las rutas en vivo; los colectores de registro van a fallar")
+		} else {
+			defer snap.Close()
+		}
+		for _, i := range pending {
+			if vssErr == nil {
+				*specs[i].dst = vss.PathIn(snap, specs[i].rel)
+				note("hive %s: snapshot VSS", specs[i].name)
+			} else {
+				note("hive %s: se usa la ruta en vivo; sus colectores van a fallar si está tomado", specs[i].name)
+			}
 		}
 	}
 
@@ -118,21 +138,4 @@ func RunLive(ctx context.Context, opts Options, up transport.Uploader) (report.R
 		eventlogcol.New(liveSecurityLog, liveSystemLog, liveTaskSchedLog, hives.system, hives.software),
 	}
 	return runWithCollectors(ctx, opts, up, collectors, true)
-}
-
-// stageHives copia los tres hives al stage. Es todo o nada: mezclar un hive
-// copiado con uno del snapshot complica el diagnóstico sin ganar nada.
-func stageHives(stage *lockedfile.Stage) (hivePaths, error) {
-	var out hivePaths
-	var err error
-	if out.system, err = stage.Copy(liveSystemHive); err != nil {
-		return hivePaths{}, fmt.Errorf("hive SYSTEM: %w", err)
-	}
-	if out.software, err = stage.Copy(liveSoftwareHive); err != nil {
-		return hivePaths{}, fmt.Errorf("hive SOFTWARE: %w", err)
-	}
-	if out.amcache, err = stage.Copy(liveAmcacheHive); err != nil {
-		return hivePaths{}, fmt.Errorf("hive Amcache.hve: %w", err)
-	}
-	return out, nil
 }

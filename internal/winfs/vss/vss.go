@@ -27,6 +27,12 @@ func parseShadowID(wmicOutput string) (string, error) {
 	return m[1], nil
 }
 
+var volumeRe = regexp.MustCompile(`^[A-Za-z]:\\$`)
+
+// validVolume reporta si volume tiene exactamente la forma "C:\". Es la
+// condición para poder interpolarlo en un script sin riesgo de inyección.
+func validVolume(volume string) bool { return volumeRe.MatchString(volume) }
+
 // PathIn compone un path dentro del snapshot montado.
 func PathIn(s Snapshot, relative string) string {
 	return s.DeviceObjectPath() + `\` + relative

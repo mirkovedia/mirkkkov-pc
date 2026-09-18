@@ -45,16 +45,6 @@ func nonResidentData(runs []byte, realSize uint64, flags uint16) []byte {
 	return a
 }
 
-// emptyAttr arma un atributo residente vacío de un tipo dado (para simular
-// un $ATTRIBUTE_LIST en el registro).
-func emptyAttr(attrType uint32) []byte {
-	a := make([]byte, 0x18)
-	binary.LittleEndian.PutUint32(a[0:4], attrType)
-	binary.LittleEndian.PutUint32(a[4:8], 0x18)
-	binary.LittleEndian.PutUint16(a[0x14:0x16], 0x18)
-	return a
-}
-
 // record arma un registro FILE de 1024 bytes ya con fixup aplicado (los
 // tests de acá no prueban el fixup: eso es del paquete mft).
 func record(attrs ...[]byte) []byte {
@@ -101,13 +91,6 @@ func TestParseDataLayoutNonResident(t *testing.T) {
 func TestParseDataLayoutRejectsCompressed(t *testing.T) {
 	runs := []byte{0x11, 0x01, 0x05, 0x00}
 	_, err := parseDataLayout(record(nonResidentData(runs, 100, attrFlagCompressed)))
-	if !errors.Is(err, ErrUnsupportedLayout) {
-		t.Fatalf("err = %v, want ErrUnsupportedLayout", err)
-	}
-}
-
-func TestParseDataLayoutRejectsAttributeListWithoutData(t *testing.T) {
-	_, err := parseDataLayout(record(emptyAttr(attrAttributeList)))
 	if !errors.Is(err, ErrUnsupportedLayout) {
 		t.Fatalf("err = %v, want ErrUnsupportedLayout", err)
 	}
