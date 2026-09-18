@@ -1,7 +1,7 @@
 # Agente Forense Windows — Fase 8: Calibración final, robustez y cobertura (Design)
 
 **Fecha:** 2026-09-17
-**Estado:** Implementado (2026-09-18). Pendiente la validación con un escaneo elevado real; ver el plan.
+**Estado:** Implementado y validado con escaneos reales elevados en CI (2026-09-18): veredicto `LIMPIO`, 14 de 14 colectores. Ver el plan.
 **Depende de:** Fases 1–7
 
 ## Contexto

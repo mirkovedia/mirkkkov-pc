@@ -40,13 +40,28 @@ Hallazgos de la propia implementación, no previstos en el diseño:
   dejaba el archivo vacío.
 - `kernel32.dll` trae firma embebida en Windows 11 25H2; el camino de catálogo se ejercita con `cmd.exe`.
 
-## Pendiente de validar en una máquina real
+## Validación con escaneos reales (2026-09-18)
 
-No se pudo correr un escaneo elevado desde la sesión de desarrollo. Falta confirmar sobre hardware
-real, con doble clic y UAC:
+La sesión de desarrollo corre sin elevación, pero el runner de GitHub Actions corre elevado. El CI
+ahora compila el binario, acepta el consentimiento por stdin, escanea la máquina del runner,
+verifica la cadena de custodia del reporte y resume cada colector. Tres corridas, cada una con su
+lección:
 
-1. Que la lectura raw de `SYSTEM`, `SOFTWARE` y `Amcache.hve` funciona (si no, cae a VSS y el campo
-   `collectors` del reporte lo delata por la duración). `go test ./internal/winfs/lockedfile/` desde
-   una consola elevada ejercita ese camino aislado.
-2. Que el veredicto sobre la máquina del desarrollador es `LIMPIO`.
-3. El mapeo del evento 4616 contra un `Security.evtx` real.
+| Corrida | Veredicto | Qué destapó |
+|---|---|---|
+| 1 | `SOSPECHOSO` | `FSCTL_GET_NTFS_FILE_RECORD` entrega el registro con el fixup ya aplicado y el parser exigía la forma de disco: la lectura raw fallaba siempre y, de paso, el colector de timestomping nunca había evaluado un archivo desde la Fase 3B-1. Dos falsos positivos: `System.Runtime.Loader.dll` y `rust-analyzer-proc-macro-srv.exe`. `deleted_entries` caía con "The parameter is incorrect": buffers sin alinear en lecturas crudas. |
+| 2 | `INCOMPLETO` | Con el campo `diagnostics` nuevo: `SOFTWARE` reparte su `$DATA` en una lista de atributos; el respaldo VSS por PowerShell pasaba `Volume` vacío; y el staging todo-o-nada tiraba un `SYSTEM` ya copiado. |
+| 3 | **`LIMPIO`** | 14 de 14 colectores sin fallos, los tres hives por acceso raw NTFS, reporte verificado, unos 14 segundos de escaneo. |
+
+Calibración aparte sobre la máquina del desarrollador con los colectores que no requieren elevación
+(`processes`, `emulator`): de `SOSPECHOSO` a `LIMPIO` tras tratar las apps MSIX como firmadas a
+nivel de paquete y bajar a LOW el proceso sin firma dentro del perfil.
+
+## Pendiente
+
+1. Escaneo completo con doble clic y UAC sobre la máquina del desarrollador, que tiene software que
+   el runner no tiene (drivers de anticheat de terceros, tareas de Google y MSI). Los tests
+   reproducen esos casos con sus nombres reales, pero falta la corrida.
+2. El mapeo del evento 4616 contra un `Security.evtx` con cambios de hora reales.
+3. Publicar el primer release: `git tag -a v0.2.0 -m "v0.2.0" && git push origin v0.2.0` dispara
+   `release.yml`. Es una publicación pública, así que queda a decisión del mantenedor.

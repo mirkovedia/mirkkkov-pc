@@ -125,8 +125,15 @@ go run tools/previewui/main.go > preview.html   # ver la interfaz con un reporte
 ```
 
 Los tests que necesitan abrir el volumen en crudo se saltan solos fuera de una
-consola elevada; corriendo `go test ./internal/winfs/lockedfile/` como
-administrador se ejercita la lectura raw real.
+consola elevada. El runner de CI sí corre elevado: ahí se ejercitan de verdad, y
+además el pipeline hace un **escaneo real de punta a punta** con el binario
+recién compilado, verifica la integridad del reporte y muestra el veredicto y el
+resultado de cada colector. Sobre una máquina limpia tiene que dar `LIMPIO` con
+todos los colectores en verde.
+
+Cuando un escaneo sale degradado, el campo `diagnostics` del reporte dice cómo
+se accedió a cada hive (copia raw, snapshot VSS o ruta en vivo) y por qué falló
+cada intento.
 
 ## Licencia
 
