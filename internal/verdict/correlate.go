@@ -23,8 +23,28 @@ func timeOf(a collector.Artifact) (time.Time, bool) {
 			SI struct {
 				Created time.Time
 			}
+			FN struct {
+				Created time.Time
+			}
+			Verdict struct {
+				Stomped bool
+			}
 		}
-		if err := json.Unmarshal(a.Data, &p); err != nil || p.SI.Created.IsZero() {
+		if err := json.Unmarshal(a.Data, &p); err != nil {
+			return time.Time{}, false
+		}
+		// Cuando hay timestomping, SI.Created es exactamente el valor que
+		// escribió quien es revisado: usarlo ubicaba el hallazgo anti-forense
+		// en la fecha FALSIFICADA. Un archivo aparecido hace dos horas con
+		// SI.Created en 2019 quedaba fuera del registro de actividad y del
+		// combo con el cambio de hora. $FILE_NAME no se puede tocar con la
+		// API de fechas, así que FN.Created es la fecha en que el archivo
+		// apareció de verdad.
+		stomped := a.Type == "mft_timestomp" || p.Verdict.Stomped
+		if stomped && !p.FN.Created.IsZero() {
+			return p.FN.Created, true
+		}
+		if p.SI.Created.IsZero() {
 			return time.Time{}, false
 		}
 		return p.SI.Created, true

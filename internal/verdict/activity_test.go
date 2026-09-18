@@ -94,3 +94,30 @@ func TestActivityIgnoresOutOfWindowAndFailedCollectors(t *testing.T) {
 		t.Fatalf("no debería contarse nada: %d / %d", sum(act.Channels[ChannelFiles]), sum(act.Channels[ChannelExecution]))
 	}
 }
+
+// TestActivityAlignsBucketsToLocalHour: en un huso de media hora (India,
+// UTC+5:30) los buckets tienen que empezar en la hora local en punto, que en
+// UTC cae a y media. Alineados a UTC, cada barra quedaba corrida media hora
+// respecto de las horas que dibuja la interfaz.
+func TestActivityAlignsBucketsToLocalHour(t *testing.T) {
+	ist := time.FixedZone("IST", 5*3600+30*60)
+	now := time.Date(2026, 9, 18, 15, 40, 0, 0, ist)
+	act := Activity(nil, now)
+	if m := act.From.In(ist).Minute(); m != 0 {
+		t.Fatalf("el primer bucket empieza al minuto %d de la hora local, want 0", m)
+	}
+	// El último bucket es la hora local en curso: 15:00 a 16:00 IST.
+	last := act.From.Add(time.Duration(ActivityDays*24-1) * time.Hour).In(ist)
+	if last.Hour() != 15 || last.Minute() != 0 {
+		t.Fatalf("último bucket = %v, want 15:00 IST", last)
+	}
+	// Un hecho a las 15:10 locales cae en ese último bucket; con la
+	// alineación a UTC (límite en 15:30 local) caía en el anterior.
+	results := []collector.Result{{Collector: "bam", Artifacts: []collector.Artifact{
+		art("bam", "x", map[string]any{"lastExecution": time.Date(2026, 9, 18, 15, 10, 0, 0, ist)}),
+	}}}
+	got := Activity(results, now).Channels[ChannelExecution]
+	if got[len(got)-1] != 1 {
+		t.Fatal("un hecho de la hora local en curso debe caer en el último bucket")
+	}
+}

@@ -25,9 +25,12 @@
   --line: #39424a;
   --line-soft: #2c343a;
 
+  /* Todo texto chico llega a 4.5:1 (WCAG AA) sobre el fondo donde se usa.
+     --faint daba 3.1:1 sobre --panel: las rutas de los hallazgos, que son
+     justamente lo que hay que leer, eran lo menos legible de la pantalla. */
   --text: #e6e9ec;
   --dim: #9aa5ae;
-  --faint: #6b7781;
+  --faint: #8d99a3;
 
   /* La lámpara del instrumento. */
   --amber: #f0a23b;
@@ -38,7 +41,7 @@
   --paper-grid: #dcd5c1;
   --paper-line: #c6bea6;
   --ink: #26261f;
-  --ink-faint: #7d7763;
+  --ink-faint: #615c4a;
   --ink-exec: #23466e;
   --ink-files: #a5382a;
   --ink-session: #2e6b50;
@@ -49,11 +52,14 @@
   --lane-session: #6cc097;
 
   /* Severidad: de reposo a alarma. */
-  --sev-info: #7c8790;
-  --sev-low: #5b8fd0;
+  --sev-info: #8f9aa3;
+  --sev-low: #7aa5de;
   --sev-medium: #e0ae3f;
   --sev-high: #e6803e;
-  --sev-critical: #dc4a45;
+  /* El crítico tiene dos usos que no admiten el mismo valor: como RELLENO
+     lleva texto blanco encima (5.2:1), como TEXTO va sobre el chasis (5.3:1). */
+  --sev-critical: #c8382f;
+  --sev-critical-text: #f07a74;
   --ok: #57b07f;
 
   --display: Bahnschrift, "DIN Alternate", "Segoe UI Variable Display", "Segoe UI", sans-serif;
@@ -85,7 +91,7 @@ body {
 :focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; border-radius: 3px; }
 
 @media (prefers-reduced-motion: reduce) {
-  * { animation: none !important; transition: none !important; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
 }
 
 /* Rótulo de instrumento: DIN condensada, versalitas, bien espaciada. */
@@ -242,6 +248,9 @@ body[data-screen="results"] .recorder { padding-top: 4px; }
 }
 .seg button:first-child { border-left: 0; }
 .seg button:hover { color: var(--text); }
+/* .seg tiene overflow:hidden para las esquinas: el anillo de foco va hacia
+   adentro o queda recortado. */
+.seg button:focus-visible { outline-offset: -2px; }
 .seg button.on { background: var(--raised); color: var(--text); }
 body[data-screen="consent"] .seg, body[data-screen="consent"] .rec-legend { visibility: hidden; }
 
@@ -268,7 +277,7 @@ body[data-screen="consent"] .seg, body[data-screen="consent"] .rec-legend { visi
 }
 .s-count { font-family: var(--mono); font-size: 9.5px; fill: var(--ink-faint); }
 .s-now { stroke: var(--amber); stroke-width: 1.5; }
-.s-now-label { font-family: var(--mono); font-size: 9.5px; fill: #9a6412; }
+.s-now-label { font-family: var(--mono); font-size: 9.5px; fill: #8a570c; }
 .s-gutter { fill: #e4dfce; }
 .s-marker { cursor: pointer; }
 .s-marker:focus-visible { outline: none; }
@@ -276,8 +285,15 @@ body[data-screen="consent"] .seg, body[data-screen="consent"] .rec-legend { visi
 .s-drop { stroke-width: 1; opacity: .35; }
 /* El papel se descubre de izquierda a derecha una sola vez, al mostrar el
    resultado: es el único momento orquestado de la interfaz. */
-.s-cover { fill: var(--paper); transform-box: fill-box; transform-origin: right center; }
-.s-cover.reveal { animation: uncover 1.1s cubic-bezier(.3, 0, .2, 1) .15s both; }
+/* Segura por defecto: el estado base de la tapa es invisible (scaleX 0) y la
+   animación solo la muestra mientras dura. Si la animación no corre por lo
+   que sea, el registro se ve; con el estado base tapado, quedaba cubierto
+   entero. */
+.s-cover { fill: var(--paper); transform-box: fill-box; transform-origin: right center; transform: scaleX(0); }
+/* "uncover" y no "reveal": .reveal es el botón de carpeta, y su width y
+   height de 30px se le aplicaban también a este rect, que quedaba de 30x30:
+   la animación de descubrir el papel nunca llegó a verse. */
+.s-cover.uncover { animation: uncover 1.1s cubic-bezier(.3, 0, .2, 1) .15s backwards; }
 @keyframes uncover { from { transform: scaleX(1); } to { transform: scaleX(0); } }
 
 /* La pluma recorre el papel mientras la revisión corre. */
@@ -324,7 +340,7 @@ li.failed .c-fill { background: var(--sev-medium); }
 .counter { display: none; align-items: center; gap: 5px; background: none !important; }
 .counter.on { display: inline-flex; }
 .counter::before { content: ""; width: 7px; height: 7px; border-radius: 1px; background: currentColor; }
-.counter.sev-critical { color: var(--sev-critical); }
+.counter.sev-critical { color: var(--sev-critical-text); }
 .counter.sev-high { color: var(--sev-high); }
 .counter.sev-medium { color: var(--sev-medium); }
 .counter.sev-low { color: var(--sev-low); }
@@ -344,11 +360,13 @@ li.failed .c-fill { background: var(--sev-medium); }
 .live-path, .finding-path {
   color: var(--faint); font-size: 11.5px; font-family: var(--mono);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  /* Recorta por el principio para dejar visible el nombre del archivo, que es
-     lo único que cambia entre rutas. unicode-bidi:plaintext es imprescindible:
-     con direction:rtl a secas el algoritmo bidireccional reordena las barras
-     invertidas y las rutas se leen mal. */
-  direction: rtl; unicode-bidi: plaintext; text-align: left;
+  /* Recorta por el PRINCIPIO, para dejar a la vista el nombre del archivo,
+     que es lo único que cambia entre rutas: en rtl la elipsis cae a la
+     izquierda. La ruta va dentro de un <bdi dir="ltr"> (ver setPath), que la
+     mantiene en su orden. Antes esto llevaba unicode-bidi:plaintext, que
+     devolvía el párrafo a ltr: la elipsis caía a la derecha y lo que se
+     escondía era justamente el nombre del ejecutable. */
+  direction: rtl; text-align: left;
 }
 
 /* Etiqueta de severidad: contorno y texto del color, sin relleno. Rellena
@@ -381,7 +399,7 @@ li.failed .c-fill { background: var(--sev-medium); }
 .level-limpio .verdict-level { color: var(--ok); }
 .level-incompleto .verdict-level { color: var(--dim); }
 .level-sospechoso .verdict-level { color: var(--sev-medium); }
-.level-evidencia_fuerte .verdict-level { color: var(--sev-critical); }
+.level-evidencia_fuerte .verdict-level { color: var(--sev-critical-text); }
 .verdict-summary { font-size: 16px; max-width: 40em; }
 .verdict-note {
   margin-top: 12px; font-size: 13px; color: var(--dim); max-width: 46em;
@@ -422,7 +440,7 @@ body[data-screen="results"] #screen-results { padding: 18px var(--gutter-x) 26px
 .chip-count { font-family: var(--mono); font-weight: 400; letter-spacing: 0; }
 .chip:disabled { opacity: .35; cursor: default; }
 .chip.on { background: var(--raised) !important; }
-.chip.on.sev-critical { color: var(--sev-critical) !important; border-color: var(--sev-critical); }
+.chip.on.sev-critical { color: var(--sev-critical-text) !important; border-color: var(--sev-critical-text); }
 .chip.on.sev-high { color: var(--sev-high) !important; border-color: var(--sev-high); }
 .chip.on.sev-medium { color: var(--sev-medium) !important; border-color: var(--sev-medium); }
 .chip.on.sev-low { color: var(--sev-low) !important; border-color: var(--sev-low); }
@@ -482,7 +500,7 @@ body[data-screen="results"] #screen-results { padding: 18px var(--gutter-x) 26px
 }
 .sig-signed { color: var(--ok); }
 .sig-unsigned { color: var(--sev-medium); }
-.sig-invalid { color: var(--sev-critical); }
+.sig-invalid { color: var(--sev-critical-text); }
 
 .reveal {
   align-self: center; width: 30px; height: 30px;
@@ -570,10 +588,17 @@ body.exported {
   --bg: #f4f1e8; --panel: #fbf9f3; --raised: #efebdd;
   --line: #d3ccb8; --line-soft: #e2dccb;
   --text: #23231d; --dim: #55513f; --faint: #8a8470;
+  --faint: #6c6753;
   --lane-exec: var(--ink-exec); --lane-files: var(--ink-files); --lane-session: var(--ink-session);
-  --sev-medium: #a97a12; --sev-info: #6d6a5c; --ok: #2f7a54;
+  /* Las severidades del chasis no se leen sobre papel (el naranja daba
+     2.6:1): cada una tiene su versión oscura, todas por encima de 5:1. */
+  --sev-info: #6d6a5c; --sev-low: #2f66ad; --sev-medium: #80590a; --sev-high: #a8500f;
+  --sev-critical: #b3302b; --sev-critical-text: #b3302b; --ok: #2f7a54;
   overflow: auto; height: auto;
 }
+/* El registro exportado escala con la página en vez de quedar al ancho de la
+   ventana donde se generó. */
+body.exported .paper { height: auto; }
 body.exported main { overflow: visible; }
 body.exported .group-body, body.exported .finding-evidence { display: block !important; }
 body.exported .group-head, body.exported .finding-main, body.exported .s-marker { cursor: default; }

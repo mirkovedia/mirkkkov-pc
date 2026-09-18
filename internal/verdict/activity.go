@@ -48,7 +48,14 @@ func channelOf(artifactType string) string {
 // Siempre devuelve los tres canales, aunque estén vacíos, para que la
 // interfaz dibuje los tres carriles.
 func Activity(results []collector.Result, now time.Time) *report.Activity {
-	from := now.UTC().Truncate(activityBucket).Add(-time.Duration(activityLen-1) * activityBucket)
+	// Los buckets se alinean a la hora LOCAL de now, no a la UTC. Da igual en
+	// los husos de hora entera; en los de media hora o 45 minutos (India,
+	// Nepal, el centro de Australia) una alineación a UTC dejaba cada barra
+	// corrida respecto de las horas locales que dibuja la interfaz.
+	_, offsetSec := now.Zone()
+	shift := time.Duration(offsetSec%3600) * time.Second
+	from := now.Add(shift).UTC().Truncate(activityBucket).Add(-shift).
+		Add(-time.Duration(activityLen-1) * activityBucket)
 	act := &report.Activity{
 		From:          from,
 		BucketMinutes: int(activityBucket / time.Minute),

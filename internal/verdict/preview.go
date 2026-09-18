@@ -18,6 +18,10 @@ type PreviewResult struct {
 	Notable bool
 	// At es la fecha del hecho, si el artefacto la tiene.
 	At *time.Time
+	// Artifact es la ruta que identifica al artefacto (ver artifactOf). Para
+	// BAM, ShimCache y AmCache es el ejecutable, no el hive temporal del que
+	// salió la entrada, que es lo que trae Source.
+	Artifact string
 }
 
 // Preview clasifica un artefacto para mostrarlo mientras el escaneo corre.
@@ -38,6 +42,7 @@ func Preview(a collector.Artifact) PreviewResult {
 	}
 	return PreviewResult{
 		At:       at,
+		Artifact: artifactOf(a),
 		Category: r.Category,
 		Severity: r.Severity,
 		Title:    titleOf(a),

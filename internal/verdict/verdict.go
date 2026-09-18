@@ -56,7 +56,10 @@ func Evaluate(results []collector.Result) ([]report.Finding, report.Verdict) {
 				}
 				neutralEmitted++
 			}
-			key := dedupKey{artType: a.Type, source: a.Source}
+			// Se deduplica por el artefacto real, no por Source: todas las
+			// entradas de BAM comparten Source (el hive) y colapsarían en un
+			// solo hallazgo, escondiendo el segundo cheat detrás del primero.
+			key := dedupKey{artType: a.Type, source: artifactOf(a)}
 			dupCount[key]++
 			if _, dup := seen[key]; dup {
 				continue // ya se emitió un hallazgo para este objeto
@@ -140,16 +143,29 @@ func titleOf(a collector.Artifact) string {
 	return titleFor(a.Type)
 }
 
-// artifactOf devuelve la ruta que identifica al artefacto en el hallazgo.
-// Casi siempre es Source; Amcache es la excepción: su Source es el hive y
-// lo que importa es el ejecutable que registró.
+// artifactOf devuelve la ruta que identifica al artefacto: la que se muestra
+// en el hallazgo, la que se examina en busca de nombres sospechosos y la que
+// se usa para deduplicar.
+//
+// Casi siempre es Source. BAM, ShimCache y AmCache son la excepción: su
+// Source es la ruta del HIVE del que salieron (la misma para todas sus
+// entradas) y el ejecutable vive en el payload. Mientras el motor miró solo
+// Source, esas tres fuentes nunca escalaron por nombre: un aimbot.exe
+// ejecutado y borrado quedaba registrado en las tres —son justamente las que
+// sobreviven al borrado— y el reporte decía "N artefactos, 0 destacados".
 func artifactOf(a collector.Artifact) string {
-	if a.Type == "amcache" {
-		var payload struct {
-			Path string `json:"path"`
-		}
+	var payload struct {
+		Path           string `json:"path"`
+		ExecutablePath string `json:"executablePath"`
+	}
+	switch a.Type {
+	case "amcache", "shimcache":
 		if err := json.Unmarshal(a.Data, &payload); err == nil && payload.Path != "" {
 			return payload.Path
+		}
+	case "bam":
+		if err := json.Unmarshal(a.Data, &payload); err == nil && payload.ExecutablePath != "" {
+			return payload.ExecutablePath
 		}
 	}
 	return a.Source

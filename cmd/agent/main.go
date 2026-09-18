@@ -272,11 +272,23 @@ func runGUI(timeout time.Duration, outPath string, elevated bool) error {
 				},
 			}
 			rep, err := agent.RunLive(ctx, opts, transport.NewLocalUploader(outPath))
-			if err != nil {
+			// Un error con reporte vacío es un fallo temprano: no hay nada
+			// que mostrar. Pero si lo único que falló fue ESCRIBIR el archivo
+			// (USB protegido, carpeta de solo lectura, un reporte.json
+			// anterior marcado como solo lectura), la revisión corrió entera
+			// y el reporte está completo y firmado en memoria: tirarlo y
+			// decir "no se pudo revisar" después de varios minutos era falso.
+			if err != nil && rep.SessionID == "" {
 				emit(ui.Event{Kind: ui.KindScanError, Error: err.Error()})
 				return
 			}
-			emit(ui.Event{Kind: ui.KindScanDone, Report: &rep, ReportPath: outPath})
+			done := ui.Event{Kind: ui.KindScanDone, Report: &rep}
+			if err != nil {
+				done.Error = err.Error()
+			} else {
+				done.ReportPath = outPath
+			}
+			emit(done)
 		},
 	})
 }
@@ -341,7 +353,7 @@ func streamFindings(res collector.Result, emit func(ui.Event)) {
 			Severity:  p.Severity,
 			Category:  p.Category,
 			Title:     p.Title,
-			Path:      a.Source,
+			Path:      p.Artifact,
 			Collector: res.Collector,
 			Timestamp: p.At,
 		})

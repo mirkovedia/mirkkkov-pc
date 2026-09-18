@@ -31,8 +31,10 @@ func escalate(a collector.Artifact, base Rule) Rule {
 //   - marcador débil (token exacto: hook, esp, loader, ...): tope MEDIUM. Un
 //     "run-hook.cmd" borrado es un script de desarrollo, no evidencia forense.
 func escalateByName(a collector.Artifact, r Rule) Rule {
-	strong := fsforensic.HasStrongMarker(a.Source)
-	if !strong && !fsforensic.IsSuspiciousName(a.Source) {
+	// artifactOf y no a.Source: ver su comentario.
+	name := artifactOf(a)
+	strong := fsforensic.HasStrongMarker(name)
+	if !strong && !fsforensic.IsSuspiciousName(name) {
 		return r
 	}
 	cap := SevMedium

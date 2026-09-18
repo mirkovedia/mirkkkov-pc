@@ -65,6 +65,54 @@ var FOLDER_ICON =
 
 function collectorLabel(name) { return COLLECTOR_LABEL[name] || name; }
 
+// Casi todo el texto que se muestra lo controla quien es revisado: nombres y
+// rutas de archivos, tareas, comandos, firmantes. Nunca entra como marcado
+// (siempre textContent), pero eso no alcanza: hay caracteres que no se ven y
+// cambian lo que se lee. Con U+202E, "cheat" + U+202E + "fdp.exe" se dibuja
+// como "cheatexe.pdf". visible() los deja a la vista como \u{202E} en vez de
+// obedecerlos: controles C0/C1, guion blando, marcas y aislantes bidi,
+// espacios de ancho cero y BOM.
+var INVISIBLE = /[\u0000-\u001F\u007F-\u009F\u00AD\u061C\u180E\u200B-\u200F\u2028-\u202E\u2060-\u2069\uFEFF]/g;
+function visible(s) {
+  return String(s === null || s === undefined ? "" : s).replace(INVISIBLE, function (c) {
+    return "\\u{" + c.charCodeAt(0).toString(16).toUpperCase() + "}";
+  });
+}
+
+// sevClass y sigClass devuelven un sufijo de clase solo si es uno conocido:
+// un nombre de clase nunca se arma con una cadena que venga de los datos.
+function sevClass(sev) {
+  var s = String(sev || "INFO").toUpperCase();
+  return SEV_ORDER[s] !== undefined ? s.toLowerCase() : "info";
+}
+function sigClass(status) {
+  return SIG_LABEL[status] ? status : "unsigned";
+}
+
+// setPath escribe una ruta en un nodo que recorta por el PRINCIPIO, para que
+// lo que quede a la vista sea el nombre del archivo, que es lo único que
+// cambia entre rutas. El contenedor va en rtl (la elipsis cae a la izquierda)
+// y la ruta va dentro de un <bdi dir="ltr">, que la mantiene en su orden y la
+// aísla del resto de la línea. La ruta completa queda en el title.
+function setPath(node, path) {
+  var text = visible(path);
+  node.textContent = "";
+  var b = document.createElement("bdi");
+  b.setAttribute("dir", "ltr");
+  b.textContent = text;
+  node.appendChild(b);
+  node.title = text;
+}
+
+// setGroupOpen abre o cierra un grupo de hallazgos y mantiene aria-expanded
+// al día. La clase "open" se cambia desde cinco lugares; hacerlo a mano en
+// cada uno dejaba al lector de pantalla sin saber el estado.
+function setGroupOpen(group, open) {
+  group.classList.toggle("open", open);
+  var head = group.querySelector(".group-head");
+  if (head) head.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
 function show(id) {
   document.body.setAttribute("data-screen", id.replace("screen-", ""));
   document.getElementById("main").scrollTop = 0;
@@ -246,12 +294,12 @@ function onFinding(ev) {
   var item = document.createElement("div");
   item.className = "live-item";
   item.innerHTML =
-    '<span class="badge sev-' + sev.toLowerCase() + '"></span>' +
+    '<span class="badge sev-' + sevClass(sev) + '"></span>' +
     '<span class="live-title"></span>' +
     '<span class="live-path"></span>';
-  item.querySelector(".badge").textContent = SEV_LABEL[sev] || sev;
-  item.querySelector(".live-title").textContent = ev.title || "";
-  item.querySelector(".live-path").textContent = ev.path || "";
+  item.querySelector(".badge").textContent = SEV_LABEL[sev] || "Info";
+  item.querySelector(".live-title").textContent = visible(ev.title);
+  setPath(item.querySelector(".live-path"), ev.path || "");
   feed.insertBefore(item, feed.firstChild);
 
   // Podar el final: lo viejo ya se contabilizó en los contadores y va a
@@ -276,7 +324,7 @@ function renderCounters(bumped) {
     if (!el) {
       el = document.createElement("span");
       el.id = id;
-      el.className = "counter sev-" + k.toLowerCase();
+      el.className = "counter sev-" + sevClass(k);
       el.title = SEV_LABEL[k];
       box.appendChild(el);
     }
@@ -297,8 +345,12 @@ function onScanError(ev) {
   document.getElementById("verdict-level").textContent = "No se pudo revisar";
   document.getElementById("verdict-summary").textContent = "La revisión se interrumpió antes de producir un resultado.";
   var note = document.getElementById("verdict-note");
-  note.textContent = ev.error || "";
+  note.textContent = visible(ev.error);
   note.hidden = !ev.error;
+  // Sin reporte no hay nada que exportar ni ruta que copiar: los controles
+  // se ocultan en vez de quedar como botones que no hacen nada.
+  document.getElementById("export-btn").hidden = true;
+  document.getElementById("report-path").hidden = true;
   show("screen-results");
 }
 
@@ -327,6 +379,16 @@ function onScanDone(ev) {
   state.revealStrip = true;
 
   renderVerdict(rep.verdict || {}, rep.status);
+  if (ev.error) {
+    // La revisión corrió entera pero el archivo no se pudo escribir (USB
+    // protegido, carpeta de solo lectura). El resultado es válido y se
+    // muestra; lo que falta es el archivo, y se dice.
+    var saveNote = document.getElementById("verdict-note");
+    saveNote.textContent = "La revisión terminó, pero no se pudo guardar el reporte: " + visible(ev.error) +
+      " Exportá el HTML o copiá el ejecutable a una carpeta donde se pueda escribir y repetí la revisión. " +
+      saveNote.textContent;
+    saveNote.hidden = false;
+  }
   renderContext(rep);
   renderDistribution(findings);
   renderFilters(findings);
@@ -422,27 +484,45 @@ function renderStrip() {
   svg.appendChild(svgEl("rect", { x: 0, y: 0, width: x0 - 8, height: H, "class": "s-gutter" }));
 
   // Cuadrícula de tiempo.
+  //
+  // Las líneas se ubican por el INSTANTE de cada medianoche local, no
+  // preguntándole a cada bucket si su hora es 0: con cambio de horario hay
+  // días sin medianoche (o con dos) y en los husos de media hora ningún
+  // bucket cae en punto. Cada medianoche se reconstruye con el constructor de
+  // Date, que normaliza solo; avanzar con setDate arrastra el corrimiento de
+  // una hora a todos los días siguientes.
   var grid = svgEl("g", {});
-  var dayIndex = 0;
-  for (var i = start; i <= total; i++) {
-    var d = new Date(fromMs + i * HOUR);
-    var x = x0 + (i - start) * bw;
-    var hr = d.getHours();
-    if (hr === 0) {
-      grid.appendChild(svgEl("line", { x1: x, y1: top - 6, x2: x, y2: bottom, "class": "s-day" }));
-      var labelEvery = range === 720 ? 5 : 1;
-      if (dayIndex % labelEvery === 0 && x < x1 - 40) {
+  var winStart = fromMs + start * HOUR;
+  var winEnd = fromMs + total * HOUR;
+  var xAt = function (ms) { return x0 + ((ms - fromMs) / HOUR - start) * bw; };
+  // Una etiqueta pegada al borde derecho se monta sobre "ahora".
+  var labelFits = function (x) { return x < x1 - 80; };
+  var first = new Date(winStart);
+  var innerHours = range === 48 ? [6, 12, 18] : range === 168 ? [12] : [];
+  var labelEvery = range === 720 ? 5 : 1;
+  for (var n = 0; n < 40; n++) {
+    var midnight = new Date(first.getFullYear(), first.getMonth(), first.getDate() + n);
+    var mt = midnight.getTime();
+    if (mt > winEnd) break;
+    if (mt >= winStart) {
+      var mx = xAt(mt);
+      grid.appendChild(svgEl("line", { x1: mx, y1: top - 6, x2: mx, y2: bottom, "class": "s-day" }));
+      if (n % labelEvery === 0 && labelFits(mx)) {
         var txt = range === 720
-          ? d.toLocaleDateString("es", { day: "numeric", month: "short" })
-          : d.toLocaleDateString("es", { weekday: "short", day: "numeric" });
-        grid.appendChild(svgEl("text", { x: x + 4, y: H - 7, "class": "s-axis" }, txt));
+          ? midnight.toLocaleDateString("es", { day: "numeric", month: "short" })
+          : midnight.toLocaleDateString("es", { weekday: "short", day: "numeric" });
+        grid.appendChild(svgEl("text", { x: mx + 4, y: H - 7, "class": "s-axis" }, txt));
       }
-      dayIndex++;
-    } else if (range === 48 && hr % 6 === 0) {
-      grid.appendChild(svgEl("line", { x1: x, y1: top, x2: x, y2: bottom, "class": "s-grid" }));
-      grid.appendChild(svgEl("text", { x: x + 4, y: H - 7, "class": "s-axis" }, (hr < 10 ? "0" : "") + hr + ":00"));
-    } else if (range === 168 && hr === 12) {
-      grid.appendChild(svgEl("line", { x1: x, y1: top, x2: x, y2: bottom, "class": "s-grid" }));
+    }
+    for (var ih = 0; ih < innerHours.length; ih++) {
+      var hr = innerHours[ih];
+      var ht = new Date(first.getFullYear(), first.getMonth(), first.getDate() + n, hr).getTime();
+      if (ht < winStart || ht > winEnd) continue;
+      var hx = xAt(ht);
+      grid.appendChild(svgEl("line", { x1: hx, y1: top, x2: hx, y2: bottom, "class": "s-grid" }));
+      if (range === 48 && labelFits(hx)) {
+        grid.appendChild(svgEl("text", { x: hx + 4, y: H - 7, "class": "s-axis" }, (hr < 10 ? "0" : "") + hr + ":00"));
+      }
     }
   }
   svg.appendChild(grid);
@@ -479,39 +559,73 @@ function renderStrip() {
   }
   svg.appendChild(ink);
 
-  // Marcas de hallazgos sobre el riel superior.
+  // Marcas de hallazgos sobre el riel superior, ordenadas en el tiempo.
+  //
+  // Teclado: el riel entero es UNA sola parada de Tab (tabindex itinerante) y
+  // las flechas se mueven entre marcas. Con una marca por parada, un reporte
+  // de 150 hallazgos con fecha obligaba a 150 tabulaciones para llegar a los
+  // filtros, que vienen después en el documento.
   var rail = svgEl("g", {});
+  var visibleMarks = [];
   for (var m = 0; m < state.markers.length; m++) {
     var mk = state.markers[m];
-    var mx = x0 + ((mk.t - fromMs) / HOUR - start) * bw;
-    if (mx < x0 || mx > x1) continue;
-    var color = "var(--sev-" + mk.severity.toLowerCase() + ")";
-    var drop = svgEl("line", { x1: mx, y1: 16, x2: mx, y2: bottom, "class": "s-drop" });
+    if (!isFinite(mk.t)) continue; // fecha ilegible: no se inventa una posición
+    var px = xAt(mk.t);
+    if (px < x0 || px > x1) continue;
+    visibleMarks.push({ mk: mk, x: px });
+  }
+  visibleMarks.sort(function (a, b) { return a.x - b.x; });
+  var focusable = [];
+  for (var v = 0; v < visibleMarks.length; v++) {
+    var mark = visibleMarks[v].mk;
+    var cx = visibleMarks[v].x;
+    var color = "var(--sev-" + sevClass(mark.severity) + ")";
+    var drop = svgEl("line", { x1: cx, y1: 16, x2: cx, y2: bottom, "class": "s-drop" });
     drop.setAttribute("stroke", color);
     rail.appendChild(drop);
     var g = svgEl("g", { "class": "s-marker" });
-    var tri = svgEl("path", { d: "M" + (mx - 5) + " 5 L" + (mx + 5) + " 5 L" + mx + " 16 Z" });
+    var tri = svgEl("path", { d: "M" + (cx - 5) + " 5 L" + (cx + 5) + " 5 L" + cx + " 16 Z" });
     tri.setAttribute("fill", color);
     g.appendChild(tri);
-    g.appendChild(svgEl("title", {}, (SEV_LABEL[mk.severity] || mk.severity) + " · " + mk.title + " · " + fmtDateTime(mk.t)));
-    if (mk.id) {
-      g.setAttribute("tabindex", "0");
+    g.appendChild(svgEl("title", {}, (SEV_LABEL[mark.severity] || mark.severity) + " · " + visible(mark.title) + " · " + fmtDateTime(mark.t)));
+    if (mark.id) {
       g.setAttribute("role", "button");
-      g.setAttribute("aria-label", "Ir al hallazgo: " + mk.title);
-      (function (id) {
-        g.addEventListener("click", function () { jumpToFinding(id); });
-        g.addEventListener("keydown", function (e) {
-          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); jumpToFinding(id); }
+      g.setAttribute("tabindex", focusable.length === 0 ? "0" : "-1");
+      g.setAttribute("aria-label", "Ir al hallazgo: " + visible(mark.title) + ", " + fmtDateTime(mark.t));
+      focusable.push(g);
+      (function (id, node) {
+        node.addEventListener("click", function () { jumpToFinding(id); });
+        node.addEventListener("keydown", function (e) {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            jumpToFinding(id);
+            return;
+          }
+          var at = focusable.indexOf(node);
+          var to = e.key === "ArrowRight" ? at + 1 : e.key === "ArrowLeft" ? at - 1 :
+            e.key === "Home" ? 0 : e.key === "End" ? focusable.length - 1 : -1;
+          if (to < 0 || to >= focusable.length || to === at) return;
+          e.preventDefault();
+          node.setAttribute("tabindex", "-1");
+          focusable[to].setAttribute("tabindex", "0");
+          focusable[to].focus();
         });
-      })(mk.id);
+      })(mark.id, g);
     }
     rail.appendChild(g);
   }
 
-  // Descubrir el papel de izquierda a derecha, una sola vez.
+  // Descubrir el papel de izquierda a derecha, una sola vez. Con movimiento
+  // reducido no se agrega la tapa: sin animación quedaría fija, tapando el
+  // registro entero.
   if (state.revealStrip && document.body.getAttribute("data-screen") === "results") {
     state.revealStrip = false;
-    svg.appendChild(svgEl("rect", { x: x0, y: 0, width: x1 - x0 + 1, height: bottom + 1, "class": "s-cover reveal" }));
+    var still = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!still) {
+      // "uncover" y no "reveal": .reveal es el botón de carpeta, y su
+      // width/height de 30px se aplicaba también a este rect.
+      svg.appendChild(svgEl("rect", { x: x0, y: 0, width: x1 - x0 + 1, height: bottom + 1, "class": "s-cover uncover" }));
+    }
   }
   svg.appendChild(rail);
 
@@ -544,9 +658,13 @@ function jumpToFinding(id) {
   }
   if (!el) return;
   var group = el.closest(".group");
-  if (group) group.classList.add("open");
-  if (!el.classList.contains("open")) el.querySelector(".finding-main").click();
+  if (group) setGroupOpen(group, true);
+  var main = el.querySelector(".finding-main");
+  if (!el.classList.contains("open")) main.click();
   el.scrollIntoView({ block: "center", behavior: "smooth" });
+  // El foco acompaña al salto: si se queda en el SVG, el Tab siguiente va a
+  // la marca de al lado en vez de seguir por el hallazgo.
+  main.focus({ preventScroll: true });
   el.classList.remove("flash");
   void el.offsetWidth;
   el.classList.add("flash");
@@ -750,7 +868,9 @@ function passesFilters(f) {
   if (!state.filters.sev[f.severity || "INFO"]) return false;
   var q = state.filters.text;
   if (!q) return true;
-  var hay = ((f.title || "") + " " + (f.artifact || "") + " " + (f.evidence || "")).toLowerCase();
+  // Los invisibles se quitan antes de comparar: un carácter de ancho cero en
+  // medio de "aimbot" no tiene que esconderlo de la búsqueda.
+  var hay = ((f.title || "") + " " + (f.artifact || "") + " " + (f.evidence || "")).replace(INVISIBLE, "").toLowerCase();
   return hay.indexOf(q) !== -1;
 }
 
@@ -809,7 +929,7 @@ function buildTimeline(findings) {
   dated.sort(function (a, b) { return new Date(b.timestamp) - new Date(a.timestamp); });
 
   var group = buildGroup("Línea de tiempo", [], false);
-  group.classList.add("open");
+  setGroupOpen(group, true);
   group.querySelector(".group-count").textContent = dated.length + " con fecha · " + undated.length + " sin fecha";
   var body = group.querySelector(".group-body");
   var lastDay = "";
@@ -849,9 +969,6 @@ function buildGroup(title, items, sortBySeverity) {
   }
   var group = document.createElement("div");
   group.className = "group";
-  // Las categorías que solo tienen informativos arrancan cerradas: son ruido
-  // para quien mira el resultado, pero siguen disponibles.
-  if (maxSeverity(items) > SEV_ORDER.INFO) group.classList.add("open");
 
   var head = document.createElement("div");
   head.className = "group-head";
@@ -860,9 +977,10 @@ function buildGroup(title, items, sortBySeverity) {
   head.innerHTML = '<span class="group-caret">▶</span><span class="group-title"></span><span class="group-count"></span>';
   head.querySelector(".group-title").textContent = title;
   head.querySelector(".group-count").textContent = items.length + (items.length === 1 ? " hallazgo" : " hallazgos");
-  head.onclick = function () { group.classList.toggle("open"); };
+  var flip = function () { setGroupOpen(group, !group.classList.contains("open")); };
+  head.onclick = flip;
   head.onkeydown = function (e) {
-    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); group.classList.toggle("open"); }
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(); }
   };
 
   var body = document.createElement("div");
@@ -871,6 +989,9 @@ function buildGroup(title, items, sortBySeverity) {
 
   group.appendChild(head);
   group.appendChild(body);
+  // Las categorías que solo tienen informativos arrancan cerradas: son ruido
+  // para quien mira el resultado, pero siguen disponibles.
+  setGroupOpen(group, maxSeverity(items) > SEV_ORDER.INFO);
   return group;
 }
 
@@ -880,8 +1001,9 @@ function buildGroup(title, items, sortBySeverity) {
 function revealable(path) {
   if (!path) return false;
   if (path.indexOf("<sin-resolver>") !== -1) return false;
-  if (/^[A-Za-z]:[\\/]/.test(path)) return true;
-  return path.indexOf("\\\\") === 0;
+  // Solo letra de unidad. Las rutas UNC y de dispositivo se rechazan igual que
+  // en Go: tocarlas desde el proceso elevado sale a la red.
+  return /^[A-Za-z]:[\\/]/.test(path);
 }
 
 // parseEvidence separa el prefijo de deduplicación ("N eventos sobre este
@@ -918,26 +1040,28 @@ function buildFinding(f) {
   var sev = f.severity || "INFO";
   el.innerHTML =
     '<div class="finding-main">' +
-    '<span class="badge sev-' + sev.toLowerCase() + '"></span>' +
+    '<span class="badge sev-' + sevClass(sev) + '"></span>' +
     '<div class="f-body"><div class="finding-title"></div><div class="finding-path"></div></div>' +
     '<div class="f-side"></div>' +
     "</div>";
-  el.querySelector(".badge").textContent = SEV_LABEL[sev] || sev;
+  el.querySelector(".badge").textContent = SEV_LABEL[sev] || "Info";
   var titleEl = el.querySelector(".finding-title");
   var pathEl = el.querySelector(".finding-path");
-  titleEl.textContent = f.title || "";
-  pathEl.textContent = f.artifact || "";
+  titleEl.textContent = visible(f.title);
+  setPath(pathEl, f.artifact || "");
   // Las filas de resumen y de fuente caída traen el identificador técnico
   // de la fuente: se muestran con el nombre que la persona reconoce y con su
   // texto como nota en prosa, no como ruta.
   var id = f.id || "";
   if (id.indexOf("summary-") === 0) {
     titleEl.textContent = collectorLabel(f.artifact) + ": actividad normal";
-    pathEl.textContent = f.evidence || "";
+    pathEl.textContent = visible(f.evidence);
+    pathEl.removeAttribute("title");
     pathEl.classList.add("note");
   } else if (id.indexOf("collector-error-") === 0) {
     titleEl.textContent = "No se pudo leer: " + collectorLabel(f.artifact);
-    pathEl.textContent = f.evidence || "";
+    pathEl.textContent = visible(f.evidence);
+    pathEl.removeAttribute("title");
     pathEl.classList.add("note");
   }
 
@@ -952,8 +1076,8 @@ function buildFinding(f) {
   var sig = signatureOf(ev.data);
   if (sig) {
     var s = document.createElement("span");
-    s.className = "sig sig-" + sig.status;
-    s.textContent = SIG_LABEL[sig.status] + (sig.signer ? " · " + sig.signer : "");
+    s.className = "sig sig-" + sigClass(sig.status);
+    s.textContent = (SIG_LABEL[sig.status] || "Sin firma") + (sig.signer ? " · " + visible(sig.signer) : "");
     side.appendChild(s);
   }
   var metaParts = [];
@@ -987,7 +1111,7 @@ function buildFinding(f) {
     btn.className = "reveal";
     btn.innerHTML = FOLDER_ICON;
     btn.title = "Abrir la ubicación en el explorador";
-    btn.setAttribute("aria-label", "Abrir la ubicación de " + (f.artifact || ""));
+    btn.setAttribute("aria-label", "Abrir la ubicación de " + visible(f.artifact));
     btn.onclick = function () {
       // El backend valida de nuevo: el archivo puede haber sido borrado, en
       // cuyo caso abre el directorio que lo contenía.
@@ -1012,7 +1136,7 @@ function ensureEvidence(el, ev) {
   box.className = "finding-evidence";
   if (!ev.data) {
     var pre = document.createElement("pre");
-    pre.textContent = ev.raw;
+    pre.textContent = visible(ev.raw);
     box.appendChild(pre);
   } else {
     box.appendChild(evidenceTable(ev.data));
@@ -1028,9 +1152,9 @@ function evidenceTable(data) {
   for (var i = 0; i < rows.length; i++) {
     var tr = document.createElement("tr");
     var th = document.createElement("th");
-    th.textContent = rows[i][0];
+    th.textContent = visible(rows[i][0]);
     var td = document.createElement("td");
-    td.textContent = rows[i][1];
+    td.textContent = visible(rows[i][1]);
     tr.appendChild(th);
     tr.appendChild(td);
     table.appendChild(tr);
@@ -1057,8 +1181,11 @@ function flatten(obj, prefix) {
       rows = rows.concat(flatten(v, name));
     } else if (typeof v === "boolean") {
       rows.push([name, v ? "sí" : "no"]);
-    } else if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}T/.test(v)) {
-      if (v.indexOf("0001-01-01") === 0) continue; // fecha cero de Go
+    } else if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/.test(v)) {
+      // Solo la fecha cero EXACTA de Go se omite. Con un prefijo ("empieza
+      // con 0001-01-01") cualquier campo de texto que alguien hiciera
+      // empezar así desaparecía de la tabla de evidencia.
+      if (/^0001-01-01T00:00:00(\.0+)?Z$/.test(v)) continue;
       rows.push([name, fmtDateTime(v)]);
     } else {
       rows.push([name, String(v)]);
@@ -1112,24 +1239,62 @@ function copyReportPath() {
 // que la escriba junto al reporte. Es lo que se le manda a alguien que no va
 // a abrir un JSON. Sale en papel: el mismo documento, con la paleta clara.
 function onExportClick() {
-  if (!state.report) return;
-  // Desplegar toda la evidencia antes de clonar, para que el archivo sea
-  // completo aunque nadie haya abierto nada.
+  if (!state.report) {
+    toast("No hay resultado para exportar");
+    return;
+  }
   var all = state.report.findings || [];
+
+  // El documento exportado lleva TODOS los hallazgos, no los que estén a la
+  // vista. Se clonaba el DOM ya filtrado y se quitaba la barra de filtros:
+  // con "Info" y "Bajo" apagados, el archivo salía incompleto sin decirlo.
+  var saved = { sev: {}, text: state.filters.text, sort: state.filters.sort };
+  for (var k in state.filters.sev) { saved.sev[k] = state.filters.sev[k]; state.filters.sev[k] = true; }
+  state.filters.text = "";
+  state.filters.sort = "severity";
+  renderFindings(all);
   for (var i = 0; i < all.length; i++) {
     var node = state.findingEls[all[i].id];
     if (node) ensureEvidence(node, parseEvidence(all[i].evidence));
   }
+
   var root = document.documentElement.cloneNode(true);
+
+  // La pantalla vuelve a como estaba antes de tocar nada más.
+  state.filters.sev = saved.sev;
+  state.filters.text = saved.text;
+  state.filters.sort = saved.sort;
+  renderFindings(all);
+
   var drop = root.querySelectorAll("script, #screen-consent, #screen-scan, #statusbar, #toast, .results-actions, .reveal, .seg, .pen, .filter-bar, .s-cover");
   for (var d = 0; d < drop.length; d++) drop[d].remove();
+  // Un documento estático no tiene nada que activar con el teclado.
+  var inert = root.querySelectorAll("[role=button], [tabindex]");
+  for (var r = 0; r < inert.length; r++) {
+    inert[r].removeAttribute("role");
+    inert[r].removeAttribute("tabindex");
+    inert[r].removeAttribute("aria-expanded");
+  }
+  // El registro se dibujó al ancho de ESTA ventana. Con viewBox y sin medidas
+  // fijas se adapta al ancho de quien lo abra o lo imprima; con el ancho en
+  // píxeles se cortaban los días más recientes en una ventana más angosta.
+  var strip = root.querySelector("#strip");
+  if (strip) {
+    strip.removeAttribute("width");
+    strip.removeAttribute("height");
+    strip.setAttribute("preserveAspectRatio", "xMinYMin meet");
+    strip.setAttribute("style", "width:100%;height:auto;display:block");
+  }
+
   var body = root.querySelector("body");
   body.classList.add("exported");
   body.classList.remove("scanning");
   var stamp = document.createElement("p");
   stamp.className = "export-stamp";
-  stamp.textContent = "Exportado el " + new Date().toLocaleString("es") + " desde " + state.reportPath +
-    " · sesión " + (state.report.sessionId || "") + " · La versión firmada y verificable es el archivo JSON.";
+  stamp.textContent = "Exportado el " + new Date().toLocaleString("es") +
+    (state.reportPath ? " desde " + state.reportPath : "") +
+    " · sesión " + (state.report.sessionId || "") + " · " + all.length + " hallazgos" +
+    " · La versión firmada y verificable es el archivo JSON.";
   var main = root.querySelector("main");
   main.insertBefore(stamp, main.firstChild);
   window.exportHTML("<!DOCTYPE html>\n" + root.outerHTML).then(function (path) {
