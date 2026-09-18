@@ -62,3 +62,37 @@ jobs:
         with:
           name: mirkkkov-windows-amd64
           path: mirkkkov.exe
+
+      # El runner de GitHub corre elevado: es el único lugar donde estos
+      # caminos se ejercitan de verdad. Van con -v para que en el log se vea
+      # PASS y no SKIP; sin elevación se saltan solos y no avisarían.
+      - name: Tests que requieren elevación
+        run: go test -count=1 -v -run "TestCopyToReadsLockedFileRaw|TestGetFileRecordReadsRealFile" ./internal/winfs/lockedfile/ ./internal/winfs/mft/
+
+      # Escaneo real de punta a punta con el binario recién compilado: acepta
+      # el consentimiento por stdin, escanea la máquina del runner, verifica la
+      # cadena de custodia del reporte y muestra cómo le fue a cada colector.
+      # No se exige un veredicto: la imagen del runner no es una PC de jugador.
+      # Lo que sí tiene que pasar es que el escaneo termine y el reporte verifique.
+      - name: Escaneo real de punta a punta
+        shell: bash
+        run: |
+          echo si | ./mirkkkov.exe -console -out smoke-reporte.json -timeout 8m
+          ./mirkkkov.exe -verify smoke-reporte.json
+          python - <<'PY'
+          import json, collections
+          d = json.load(open("smoke-reporte.json", encoding="utf-8"))
+          print("VEREDICTO:", d["verdict"]["level"], "|", d["verdict"]["summary"])
+          print("ESTADO:", d["status"], "| build:", d["machine"].get("build"))
+          for c in d.get("collectors", []):
+              print("  colector %-16s artefactos=%-6d %6d ms  %s" % (c["name"], c["artifacts"], c["durationMs"], c.get("error", "")))
+          sev = collections.Counter(f["severity"] for f in d["findings"])
+          print("HALLAZGOS:", dict(sev))
+          for f in d["findings"]:
+              if f["severity"] not in ("INFO", "LOW"):
+                  print("  [%s] %s | %s" % (f["severity"], f["title"], f["artifact"]))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: smoke-reporte
+          path: smoke-reporte.json
