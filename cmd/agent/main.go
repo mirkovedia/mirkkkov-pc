@@ -10,8 +10,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/mirkovedia/mirkkkov-pc/internal/agent"
@@ -190,7 +192,15 @@ func runGUI(timeout time.Duration, outPath string, elevated bool) error {
 	}
 	return ui.Run(ui.Options{
 		Title: "Mirkkkov",
-		OnScan: func(emit func(ui.Event)) {
+		ExportHTML: func(html string) (string, error) {
+			// El HTML exportado queda al lado del JSON, con el mismo nombre.
+			htmlPath := strings.TrimSuffix(outPath, filepath.Ext(outPath)) + ".html"
+			if err := os.WriteFile(htmlPath, []byte(html), 0o600); err != nil {
+				return "", err
+			}
+			return htmlPath, nil
+		},
+		OnScan: func(ctx context.Context, emit func(ui.Event)) {
 			opts := agent.Options{
 				Timeout: timeout,
 				Version: agentVersion,
@@ -221,12 +231,12 @@ func runGUI(timeout time.Duration, outPath string, elevated bool) error {
 					},
 				},
 			}
-			rep, err := agent.RunLive(context.Background(), opts, transport.NewLocalUploader(outPath))
+			rep, err := agent.RunLive(ctx, opts, transport.NewLocalUploader(outPath))
 			if err != nil {
 				emit(ui.Event{Kind: ui.KindScanError, Error: err.Error()})
 				return
 			}
-			emit(ui.Event{Kind: ui.KindScanDone, Report: &rep})
+			emit(ui.Event{Kind: ui.KindScanDone, Report: &rep, ReportPath: outPath})
 		},
 	})
 }
@@ -338,7 +348,11 @@ func runConsole(timeout time.Duration, serverURL, outPath string, elevated bool)
 		Machine:   machineInfo(elevated),
 	}
 
-	rep, err := agent.RunLive(context.Background(), opts, up)
+	// Ctrl+C cancela el contexto en vez de matar el proceso: el snapshot VSS
+	// se cierra y el reporte parcial queda escrito con estado ABORTED.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	rep, err := agent.RunLive(ctx, opts, up)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "el escaneo terminó con error: %v\n", err)
 		os.Exit(1)

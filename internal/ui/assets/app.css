@@ -192,6 +192,10 @@ h1 { font-size: 21px; font-weight: 600; letter-spacing: -.2px; margin-bottom: 8p
   color: #16110a; font-weight: 600;
 }
 .btn-primary:hover { filter: brightness(1.08); border-color: var(--accent); }
+.btn-ghost { background: transparent; color: var(--text-dim); }
+.btn-ghost:hover { color: var(--text); }
+.btn-small { padding: 4px 10px; font-size: 11.5px; border-radius: 5px; }
+.btn:disabled { opacity: .55; cursor: default; }
 
 /* ---------------- escaneo ---------------- */
 .scan-grid { display: grid; grid-template-columns: 280px 1fr; gap: 14px; }

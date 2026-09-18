@@ -68,6 +68,17 @@ function rejectConsent() {
   window.closeApp();
 }
 
+// cancelScan pide al backend que corte el escaneo. Lo que ya se revisó igual
+// termina en el reporte, marcado como ABORTED: la pantalla de resultados
+// llega sola cuando el backend suelta el snapshot y escribe el archivo.
+function cancelScan() {
+  var btn = document.getElementById("cancel-btn");
+  btn.disabled = true;
+  btn.textContent = "Cancelando…";
+  document.getElementById("progress-current").textContent = "Deteniendo el escaneo";
+  window.cancelScan();
+}
+
 function closeApp() {
   window.closeApp();
 }
@@ -244,18 +255,18 @@ function onScanDone(ev) {
   var verdict = rep.verdict || {};
   var findings = rep.findings || [];
 
-  renderVerdict(verdict);
+  renderVerdict(verdict, rep.status);
   renderDistribution(findings);
   renderFindings(findings);
 
-  if (rep.reportPath) {
-    document.getElementById("report-path").textContent = rep.reportPath;
+  if (ev.reportPath) {
+    document.getElementById("report-path").textContent = ev.reportPath;
   }
 }
 
 // ---------------------------------------------------------------- render
 
-function renderVerdict(verdict) {
+function renderVerdict(verdict, status) {
   var level = verdict.level || "LIMPIO";
   var box = document.getElementById("verdict");
   box.className = "verdict level-" + level.toLowerCase();
@@ -276,15 +287,18 @@ function renderVerdict(verdict) {
   document.getElementById("verdict-summary").textContent = verdict.summary || "";
 
   var noteEl = document.getElementById("verdict-note");
+  var notes = [];
+  if (status === "ABORTED") {
+    notes.push("El escaneo se detuvo antes de terminar. Este resultado cubre solo lo revisado hasta ese momento.");
+  }
   if (verdict.failedCollectors && verdict.failedCollectors.length) {
-    noteEl.textContent =
+    notes.push(
       "Revisión parcial: no se pudo leer " +
       verdict.failedCollectors.join(", ") +
-      ". Lo que esa fuente hubiera mostrado no está en este resultado.";
-    noteEl.hidden = false;
-  } else {
-    noteEl.hidden = true;
+      ". Lo que esa fuente hubiera mostrado no está en este resultado.");
   }
+  noteEl.textContent = notes.join(" ");
+  noteEl.hidden = notes.length === 0;
 }
 
 // renderDistribution dibuja la proporción real de la evidencia. Un CRITICAL

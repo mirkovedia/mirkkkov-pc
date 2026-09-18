@@ -48,6 +48,9 @@ type Event struct {
 	Path     string `json:"path,omitempty"`
 
 	Report *report.Report `json:"report,omitempty"`
+	// ReportPath es dónde quedó escrito el reporte. Solo en KindScanDone. Va
+	// aparte del Report porque la ruta no es parte del reporte firmado.
+	ReportPath string `json:"reportPath,omitempty"`
 }
 
 // JSON serializa el evento para pasarlo a JavaScript.

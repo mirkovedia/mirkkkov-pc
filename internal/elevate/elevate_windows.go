@@ -38,7 +38,7 @@ func Relaunch() error {
 	}
 	// Se propagan los argumentos originales para que la instancia elevada
 	// conserve el modo pedido (por ejemplo -console).
-	args, err := windows.UTF16PtrFromString(strings.Join(os.Args[1:], " "))
+	args, err := windows.UTF16PtrFromString(commandLine(os.Args[1:]))
 	if err != nil {
 		return err
 	}
@@ -48,4 +48,16 @@ func Relaunch() error {
 	}
 	// SW_NORMAL: la ventana del proceso elevado se muestra normalmente.
 	return windows.ShellExecute(0, verb, file, args, cwd, windows.SW_NORMAL)
+}
+
+// commandLine vuelve a armar la línea de comandos citando cada argumento con
+// las reglas de CommandLineToArgvW. Unirlos con espacios a secas rompía
+// cualquier ruta con espacios: `-out "C:\Mis Reportes\r.json"` llegaba a la
+// instancia elevada como tres argumentos.
+func commandLine(args []string) string {
+	quoted := make([]string, len(args))
+	for i, a := range args {
+		quoted[i] = windows.EscapeArg(a)
+	}
+	return strings.Join(quoted, " ")
 }
