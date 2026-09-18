@@ -11,10 +11,10 @@ func TestWeakMarkerRequiresForensicExtension(t *testing.T) {
 		"esp-coachmark-7ae3be452b065019.js.gz":                          false,
 		"call-emergency-location-loader-2ae33a93c05bd8a0.js.gz":         false,
 		"hook-86d7534c-80bb-4f1e-9489-758d77df4bb8-5-systemMessage.txt": false,
-		"_loader.cpython-313.pyc.1861862178608":                          false,
-		"esp.dll":                                                        true,
-		"run-hook.cmd":                                                   true,
-		"injector.exe":                                                   true,
+		"_loader.cpython-313.pyc.1861862178608":                         false,
+		"esp.dll":                                                       true,
+		"run-hook.cmd":                                                  true,
+		"injector.exe":                                                  true,
 		// Marcador fuerte: cualquier extensión.
 		"cheat_notes.txt": true,
 	}

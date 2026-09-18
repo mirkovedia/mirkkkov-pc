@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -19,6 +20,7 @@ import (
 	"github.com/mirkovedia/mirkkkov-pc/internal/elevate"
 	"github.com/mirkovedia/mirkkkov-pc/internal/privilege"
 	"github.com/mirkovedia/mirkkkov-pc/internal/report"
+	"github.com/mirkovedia/mirkkkov-pc/internal/sysinfo"
 	"github.com/mirkovedia/mirkkkov-pc/internal/transport"
 	"github.com/mirkovedia/mirkkkov-pc/internal/ui"
 	"github.com/mirkovedia/mirkkkov-pc/internal/verdict"
@@ -68,13 +70,46 @@ func attachParentConsole() {
 // modo consola y el modo interfaz.
 func machineInfo(elevated bool) report.MachineInfo {
 	vm := privilege.DetectVM()
-	return report.MachineInfo{
+	info := report.MachineInfo{
 		OS:            runtime.GOOS,
+		Build:         sysinfo.Build(),
 		UptimeMinutes: uptimeMinutes(),
 		Elevated:      elevated,
 		VM:            vm.Detected,
 		VMReasons:     vm.Reasons,
 	}
+	if installed, ok := sysinfo.InstallDate(); ok {
+		info.InstallDate = &installed
+	}
+	return info
+}
+
+// runVerify comprueba la cadena de custodia y la firma de un reporte ya
+// generado. No necesita elevación ni Windows: es lo que usa un tercero para
+// saber si el archivo que le mandaron es el que el agente escribió.
+func runVerify(path string) int {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "no se pudo leer %s: %v\n", path, err)
+		return 2
+	}
+	var rep report.Report
+	if err := json.Unmarshal(data, &rep); err != nil {
+		fmt.Fprintf(os.Stderr, "%s no es un reporte válido: %v\n", path, err)
+		return 2
+	}
+	fmt.Printf("Sesión:    %s\n", rep.SessionID)
+	fmt.Printf("Agente:    %s\n", rep.AgentVersion)
+	fmt.Printf("Estado:    %s\n", rep.Status)
+	fmt.Printf("Veredicto: %s — %s\n", rep.Verdict.Level, rep.Verdict.Summary)
+	fmt.Printf("Hallazgos: %d\n", len(rep.Findings))
+	if err := report.VerifyReport(rep); err != nil {
+		fmt.Printf("Integridad: FALLA — %v\n", err)
+		return 1
+	}
+	fmt.Println("Integridad: OK — la cadena de hashes y la firma coinciden con el contenido.")
+	fmt.Println("Nota: esto prueba que el archivo no fue editado después de generarse, no quién lo generó.")
+	return 0
 }
 
 // defaultReportPath deja el reporte junto al ejecutable. Es lo que permite que
@@ -97,10 +132,22 @@ func main() {
 	timeout := flag.Duration("timeout", 10*time.Minute, "timeout global del escaneo")
 	serverURL := flag.String("server", "", "URL base del servidor de verificación")
 	outPath := flag.String("out", "", "ruta donde escribir el reporte (por defecto: junto al .exe)")
+	verifyPath := flag.String("verify", "", "verificar la cadena de custodia y la firma de un reporte.json y salir")
+	showVersion := flag.Bool("version", false, "mostrar la versión y salir")
 	flag.Parse()
 
 	// Recuperar la salida por texto si el agente se invocó desde una terminal.
 	attachParentConsole()
+
+	// Los modos que no escanean no necesitan elevación: pedir UAC para leer un
+	// JSON sería absurdo.
+	if *showVersion {
+		fmt.Println("mirkkkov " + agentVersion)
+		return
+	}
+	if *verifyPath != "" {
+		os.Exit(runVerify(*verifyPath))
+	}
 
 	elevated, err := privilege.IsElevated()
 	if err != nil {

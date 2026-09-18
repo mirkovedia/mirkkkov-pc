@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"time"
 )
 
 // Result es el resultado de ejecutar un Collector.
@@ -11,6 +12,9 @@ type Result struct {
 	Collector string
 	Artifacts []Artifact
 	Err       error
+	// Duration es cuánto tardó el colector. Va al reporte: cuando a alguien le
+	// falla o se le cuelga una fuente, es el único dato para diagnosticarlo.
+	Duration time.Duration
 }
 
 // Observer recibe el avance del escaneo. Cualquiera de sus campos puede ser
@@ -36,6 +40,11 @@ func Run(ctx context.Context, collectors []Collector) []Result {
 }
 
 // RunObserved es Run con notificaciones de avance.
+//
+// Si el contexto ya está cancelado al llegar a un colector, ese colector no
+// se ejecuta y queda registrado con ctx.Err(): correr diez colectores más
+// sobre un contexto muerto solo produce diez errores idénticos y demora la
+// salida cuando el usuario ya cerró la ventana.
 func RunObserved(ctx context.Context, collectors []Collector, obs Observer) []Result {
 	ordered := make([]Collector, len(collectors))
 	copy(ordered, collectors)
@@ -60,7 +69,12 @@ func RunObserved(ctx context.Context, collectors []Collector, obs Observer) []Re
 				})
 			}
 		}
-		res := runOne(ctx, c)
+		var res Result
+		if err := ctx.Err(); err != nil {
+			res = Result{Collector: c.Name(), Err: err}
+		} else {
+			res = runOne(ctx, c)
+		}
 		if obs.OnFinish != nil {
 			obs.OnFinish(index, total, res)
 		}
@@ -71,7 +85,9 @@ func RunObserved(ctx context.Context, collectors []Collector, obs Observer) []Re
 
 func runOne(ctx context.Context, c Collector) (res Result) {
 	res.Collector = c.Name()
+	started := time.Now()
 	defer func() {
+		res.Duration = time.Since(started)
 		if r := recover(); r != nil {
 			res.Err = fmt.Errorf("panic en colector %s: %v", c.Name(), r)
 		}
