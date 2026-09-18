@@ -1,0 +1,52 @@
+# .github/workflows/release.yml
+#
+# Release permanente a partir de un tag vX.Y.Z. Publica el .exe, un archivo
+# SHA256SUMS y una atestación de procedencia (SLSA) firmada por GitHub, para
+# que cualquiera pueda comprobar que el binario descargado salió de este
+# repositorio y de este commit, sin confiar en quien lo subió.
+#
+# Uso:
+#   git tag -a v0.2.0 -m "v0.2.0" && git push origin v0.2.0
+name: release
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      - name: Test
+        run: go test ./...
+      - name: Build
+        shell: bash
+        env:
+          CGO_ENABLED: '0'
+          GOOS: windows
+          GOARCH: amd64
+        run: |
+          go build -trimpath -buildvcs=false \
+            -ldflags="-H windowsgui -X main.agentVersion=${GITHUB_REF_NAME}" \
+            -o mirkkkov.exe ./cmd/agent
+          sha256sum mirkkkov.exe > SHA256SUMS
+          cat SHA256SUMS
+      - name: Atestar procedencia
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: mirkkkov.exe
+      - name: Publicar release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            mirkkkov.exe
+            SHA256SUMS
+          generate_release_notes: true

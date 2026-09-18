@@ -7,7 +7,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/telagem/agent-windows/internal/winfs/wintext"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/wintext"
 )
 
 // TaskDefinition es una tarea programada parseada desde su XML.

@@ -8,8 +8,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/telagem/agent-windows/internal/collector"
-	"github.com/telagem/agent-windows/internal/winfs/reghive"
+	"github.com/mirkovedia/mirkkkov-pc/internal/collector"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/reghive"
 )
 
 // Collector lee el AppCompatCache del hive SYSTEM.

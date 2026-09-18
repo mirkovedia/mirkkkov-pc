@@ -7,7 +7,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/telagem/agent-windows/internal/collector"
+	"github.com/mirkovedia/mirkkkov-pc/internal/collector"
 )
 
 func TestCollectorMetadata(t *testing.T) {

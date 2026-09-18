@@ -1,7 +1,7 @@
 // internal/verdict/preview.go
 package verdict
 
-import "github.com/telagem/agent-windows/internal/collector"
+import "github.com/mirkovedia/mirkkkov-pc/internal/collector"
 
 // PreviewResult es la clasificación preliminar de un artefacto suelto.
 type PreviewResult struct {
@@ -29,7 +29,7 @@ func Preview(a collector.Artifact) PreviewResult {
 	return PreviewResult{
 		Category: r.Category,
 		Severity: r.Severity,
-		Title:    titleFor(a.Type),
+		Title:    titleOf(a),
 		Notable:  severityRank(r.Severity) > severityRank(SevInfo),
 	}
 }

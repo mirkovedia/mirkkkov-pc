@@ -10,10 +10,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/telagem/agent-windows/internal/collector"
-	"github.com/telagem/agent-windows/internal/winfs/fsforensic"
-	"github.com/telagem/agent-windows/internal/winfs/reghive"
-	winscheduler "github.com/telagem/agent-windows/internal/winfs/scheduler"
+	"github.com/mirkovedia/mirkkkov-pc/internal/collector"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/authenticode"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/fsforensic"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/reghive"
+	winscheduler "github.com/mirkovedia/mirkkkov-pc/internal/winfs/scheduler"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/wincmd"
 )
 
 // Collector recolecta tareas programadas sospechosas/ocultas y su cross-check
@@ -21,10 +23,20 @@ import (
 type Collector struct {
 	TasksDir         string
 	SoftwareHivePath string
+	// Verify comprueba la firma del ejecutable de cada tarea reportada. Se
+	// inyecta para que los tests no dependan de wintrust.dll.
+	Verify authenticode.Verifier
 }
 
 // New crea el colector con la carpeta Tasks y el hive SOFTWARE dados.
 func New(tasksDir, softwareHivePath string) *Collector {
+	c := newCollector(tasksDir, softwareHivePath)
+	c.Verify = authenticode.Verify
+	return c
+}
+
+// newCollector arma el colector sin verificador de firmas (para tests).
+func newCollector(tasksDir, softwareHivePath string) *Collector {
 	return &Collector{TasksDir: tasksDir, SoftwareHivePath: softwareHivePath}
 }
 
@@ -80,7 +92,7 @@ func (c *Collector) Collect(ctx context.Context) ([]collector.Artifact, error) {
 		if !isReportable(t) {
 			continue
 		}
-		b, _ := json.Marshal(t)
+		b, _ := json.Marshal(c.enrich(t))
 		artifacts = append(artifacts, collector.Artifact{
 			Type:      "scheduled_task",
 			Source:    t.RelPath,
@@ -89,6 +101,27 @@ func (c *Collector) Collect(ctx context.Context) ([]collector.Artifact, error) {
 		})
 	}
 	return artifacts, walkErr
+}
+
+// taskArtifact es la tarea más la firma del ejecutable que lanza. Los campos
+// de la tarea quedan al tope del JSON, donde el motor de severidad los lee.
+type taskArtifact struct {
+	winscheduler.TaskDefinition
+	Signature authenticode.Result `json:"Signature"`
+}
+
+// enrich adjunta la firma del Command de la tarea. Una tarea oculta de un
+// actualizador firmado (Google, MSI, OneDrive) es rutina; una oculta que
+// lanza un ejecutable sin firma es otra cosa.
+func (c *Collector) enrich(t winscheduler.TaskDefinition) taskArtifact {
+	art := taskArtifact{TaskDefinition: t}
+	path := wincmd.ExePath(t.Command)
+	if c.Verify == nil || path == "" {
+		art.Signature = authenticode.Result{Status: authenticode.StatusUnknown}
+		return art
+	}
+	art.Signature = c.Verify(path)
+	return art
 }
 
 // isReportable filtra a tareas ocultas o con comando/argumentos de nombre

@@ -8,10 +8,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/telagem/agent-windows/internal/collector"
-	"github.com/telagem/agent-windows/internal/report"
-	"github.com/telagem/agent-windows/internal/transport"
-	"github.com/telagem/agent-windows/internal/verdict"
+	"github.com/mirkovedia/mirkkkov-pc/internal/collector"
+	"github.com/mirkovedia/mirkkkov-pc/internal/report"
+	"github.com/mirkovedia/mirkkkov-pc/internal/transport"
+	"github.com/mirkovedia/mirkkkov-pc/internal/verdict"
 )
 
 // Options configura una ejecución del agente.
@@ -59,10 +59,20 @@ func runWithCollectors(ctx context.Context, opts Options, up transport.Uploader,
 		StartedAt:    time.Now(),
 		ConsentAt:    consentAt,
 		Machine:      opts.Machine,
-		Status:       "COMPLETE",
+		Nonce:        sess.Nonce,
+		Pubkey:       hex.EncodeToString(pub),
+		Status:       report.StatusComplete,
 	}
 
 	results := collector.RunObserved(ctx, collectors, opts.Observer)
+	rep.Collectors = collectorRuns(results)
+	// Un contexto agotado o cancelado deja resultados parciales: el reporte
+	// tiene que decirlo, porque un veredicto sobre medio escaneo no vale lo
+	// mismo que uno sobre el escaneo entero.
+	if ctx.Err() != nil {
+		rep.Status = report.StatusAborted
+	}
+
 	findings, v := verdict.Evaluate(results)
 	rep.Verdict = v
 	seq := 0
@@ -81,9 +91,31 @@ func runWithCollectors(ctx context.Context, opts Options, up transport.Uploader,
 	root := chain.Root()
 	rep.Signature = report.Sign(priv, root)
 
-	if _, err := up.Complete(ctx, sess.SessionID, rep, rep.Signature, root); err != nil {
+	// Complete se llama con un contexto propio: si el escaneo se canceló, el
+	// reporte parcial igual tiene que llegar a disco (o al servidor). Un
+	// escaneo abortado sin reporte es un escaneo que nunca existió.
+	completeCtx, cancelComplete := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancelComplete()
+	if _, err := up.Complete(completeCtx, sess.SessionID, rep, rep.Signature, root); err != nil {
 		return rep, fmt.Errorf("no se pudo completar la sesión: %w", err)
 	}
 	return rep, nil
 }
 
+// collectorRuns traduce los resultados crudos al registro de cobertura que
+// va en el reporte.
+func collectorRuns(results []collector.Result) []report.CollectorRun {
+	runs := make([]report.CollectorRun, 0, len(results))
+	for _, r := range results {
+		run := report.CollectorRun{
+			Name:       r.Collector,
+			Artifacts:  len(r.Artifacts),
+			DurationMs: r.Duration.Milliseconds(),
+		}
+		if r.Err != nil {
+			run.Error = r.Err.Error()
+		}
+		runs = append(runs, run)
+	}
+	return runs
+}

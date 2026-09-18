@@ -62,7 +62,7 @@ func buildNonResidentData(runs []byte) []byte {
 	a := make([]byte, total)
 	binary.LittleEndian.PutUint32(a[0:4], 0x80) // tipo $DATA
 	binary.LittleEndian.PutUint32(a[4:8], uint32(total))
-	a[8] = 1                                          // flag no-residente
+	a[8] = 1                                         // flag no-residente
 	binary.LittleEndian.PutUint16(a[0x20:0x22], hdr) // mapping pairs offset
 	copy(a[hdr:], runs)
 	return a

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/telagem/agent-windows/internal/report"
+	"github.com/mirkovedia/mirkkkov-pc/internal/report"
 )
 
 // Session identifica una sesión abierta en el servidor.

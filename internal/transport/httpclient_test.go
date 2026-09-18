@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/telagem/agent-windows/internal/report"
+	"github.com/mirkovedia/mirkkkov-pc/internal/report"
 )
 
 func TestOpenSessionReturnsNonce(t *testing.T) {

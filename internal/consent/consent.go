@@ -16,9 +16,12 @@ import (
 func CollectionSummary() []string {
 	return []string{
 		"El agente recolecta SOLO metadatos forenses, nunca el contenido de tus archivos:",
-		"  - Nombres, hashes y timestamps de programas ejecutados (Prefetch, BAM, ShimCache, AmCache).",
+		"  - Nombres, hashes y fechas de programas ejecutados (Prefetch, BAM, ShimCache, AmCache).",
+		"  - Programas en ejecución en este momento: nombre, ruta y firma digital.",
 		"  - Rastros de borrado de archivos (historial del sistema de archivos).",
-		"  - Configuración de emuladores y macros de control.",
+		"  - Servicios, tareas programadas y programas de inicio automático.",
+		"  - Emuladores de Android instalados, sus archivos de macro y herramientas de automatización.",
+		"  - Registros de eventos de Windows y configuración del sistema.",
 		"NO se leen: documentos, fotos, mensajes, contraseñas, cookies ni historial de navegación.",
 		"Los identificadores de hardware se anonimizan antes de salir del equipo.",
 	}

@@ -8,8 +8,8 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/telagem/agent-windows/internal/collector"
-	"github.com/telagem/agent-windows/internal/winfs/ntfs"
+	"github.com/mirkovedia/mirkkkov-pc/internal/collector"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/ntfs"
 )
 
 // Collector recupera metadatos de archivos borrados del volumen vía lectura raw del MFT.

@@ -5,27 +5,33 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
-	"github.com/telagem/agent-windows/internal/agent"
-	"github.com/telagem/agent-windows/internal/collector"
-	"github.com/telagem/agent-windows/internal/consent"
-	"github.com/telagem/agent-windows/internal/elevate"
-	"github.com/telagem/agent-windows/internal/privilege"
-	"github.com/telagem/agent-windows/internal/report"
-	"github.com/telagem/agent-windows/internal/transport"
-	"github.com/telagem/agent-windows/internal/ui"
-	"github.com/telagem/agent-windows/internal/verdict"
+	"github.com/mirkovedia/mirkkkov-pc/internal/agent"
+	"github.com/mirkovedia/mirkkkov-pc/internal/collector"
+	"github.com/mirkovedia/mirkkkov-pc/internal/consent"
+	"github.com/mirkovedia/mirkkkov-pc/internal/elevate"
+	"github.com/mirkovedia/mirkkkov-pc/internal/privilege"
+	"github.com/mirkovedia/mirkkkov-pc/internal/report"
+	"github.com/mirkovedia/mirkkkov-pc/internal/sysinfo"
+	"github.com/mirkovedia/mirkkkov-pc/internal/transport"
+	"github.com/mirkovedia/mirkkkov-pc/internal/ui"
+	"github.com/mirkovedia/mirkkkov-pc/internal/verdict"
 	"golang.org/x/sys/windows"
 )
 
-const agentVersion = "0.1.0"
+// agentVersion se inyecta en el build con -ldflags "-X main.agentVersion=vX.Y.Z";
+// "dev" identifica un binario compilado a mano fuera del pipeline de release.
+var agentVersion = "dev"
 
 // uptimeMinutes devuelve el uptime del sistema en minutos vía GetTickCount64.
 // Un uptime bajo puede indicar un reinicio para limpiar artefactos volátiles.
@@ -53,26 +59,96 @@ func attachParentConsole() {
 	if r, _, _ := attach.Call(uintptr(attachParentProcess)); r == 0 {
 		return // no había consola padre: se ejecutó con doble clic
 	}
-	if out, err := os.OpenFile("CONOUT$", os.O_WRONLY, 0); err == nil {
-		os.Stdout = out
-		os.Stderr = out
+	// Solo se reabre sobre la consola lo que NO vino redirigido. Pisar un
+	// stdout que ya apunta a un archivo o a un pipe rompe
+	// `mirkkkov.exe -verify r.json > salida.txt` y cualquier uso desde un
+	// script: la salida se iría a la consola y el archivo quedaría vacío.
+	if !stdHandleUsable(windows.STD_OUTPUT_HANDLE) {
+		if out, err := os.OpenFile("CONOUT$", os.O_WRONLY, 0); err == nil {
+			os.Stdout = out
+		}
 	}
-	if in, err := os.OpenFile("CONIN$", os.O_RDONLY, 0); err == nil {
-		os.Stdin = in
+	if !stdHandleUsable(windows.STD_ERROR_HANDLE) {
+		if out, err := os.OpenFile("CONOUT$", os.O_WRONLY, 0); err == nil {
+			os.Stderr = out
+		}
 	}
+	if !stdHandleUsable(windows.STD_INPUT_HANDLE) {
+		if in, err := os.OpenFile("CONIN$", os.O_RDONLY, 0); err == nil {
+			os.Stdin = in
+		}
+	}
+}
+
+// stdHandleUsable reporta si un descriptor estándar ya apunta a algo real
+// (archivo, pipe o consola). En un binario -H windowsgui lanzado sin
+// redirección vienen en cero.
+func stdHandleUsable(id uint32) bool {
+	h, err := windows.GetStdHandle(id)
+	if err != nil || h == 0 || h == windows.InvalidHandle {
+		return false
+	}
+	t, err := windows.GetFileType(h)
+	return err == nil && t != windows.FILE_TYPE_UNKNOWN
 }
 
 // machineInfo arma el estado de la máquina que va al reporte. Lo comparten el
 // modo consola y el modo interfaz.
 func machineInfo(elevated bool) report.MachineInfo {
 	vm := privilege.DetectVM()
-	return report.MachineInfo{
+	info := report.MachineInfo{
 		OS:            runtime.GOOS,
+		Build:         sysinfo.Build(),
 		UptimeMinutes: uptimeMinutes(),
 		Elevated:      elevated,
 		VM:            vm.Detected,
 		VMReasons:     vm.Reasons,
 	}
+	if installed, ok := sysinfo.InstallDate(); ok {
+		info.InstallDate = &installed
+	}
+	return info
+}
+
+// loadKnownCheats suma al motor los hashes de un cheats.txt que esté junto
+// al ejecutable. Es opcional y silencioso: la comunidad que opera el agente
+// mantiene esa lista; el binario no la trae.
+func loadKnownCheats() {
+	exe, err := os.Executable()
+	if err != nil {
+		return
+	}
+	if _, err := verdict.LoadKnownCheatsFile(filepath.Join(filepath.Dir(exe), "cheats.txt")); err != nil {
+		fmt.Fprintf(os.Stderr, "AVISO: no se pudo leer cheats.txt: %v\n", err)
+	}
+}
+
+// runVerify comprueba la cadena de custodia y la firma de un reporte ya
+// generado. No necesita elevación ni Windows: es lo que usa un tercero para
+// saber si el archivo que le mandaron es el que el agente escribió.
+func runVerify(path string) int {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "no se pudo leer %s: %v\n", path, err)
+		return 2
+	}
+	var rep report.Report
+	if err := json.Unmarshal(data, &rep); err != nil {
+		fmt.Fprintf(os.Stderr, "%s no es un reporte válido: %v\n", path, err)
+		return 2
+	}
+	fmt.Printf("Sesión:    %s\n", rep.SessionID)
+	fmt.Printf("Agente:    %s\n", rep.AgentVersion)
+	fmt.Printf("Estado:    %s\n", rep.Status)
+	fmt.Printf("Veredicto: %s — %s\n", rep.Verdict.Level, rep.Verdict.Summary)
+	fmt.Printf("Hallazgos: %d\n", len(rep.Findings))
+	if err := report.VerifyReport(rep); err != nil {
+		fmt.Printf("Integridad: FALLA — %v\n", err)
+		return 1
+	}
+	fmt.Println("Integridad: OK — la cadena de hashes y la firma coinciden con el contenido.")
+	fmt.Println("Nota: esto prueba que el archivo no fue editado después de generarse, no quién lo generó.")
+	return 0
 }
 
 // defaultReportPath deja el reporte junto al ejecutable. Es lo que permite que
@@ -95,16 +171,29 @@ func main() {
 	timeout := flag.Duration("timeout", 10*time.Minute, "timeout global del escaneo")
 	serverURL := flag.String("server", "", "URL base del servidor de verificación")
 	outPath := flag.String("out", "", "ruta donde escribir el reporte (por defecto: junto al .exe)")
+	verifyPath := flag.String("verify", "", "verificar la cadena de custodia y la firma de un reporte.json y salir")
+	showVersion := flag.Bool("version", false, "mostrar la versión y salir")
 	flag.Parse()
 
 	// Recuperar la salida por texto si el agente se invocó desde una terminal.
 	attachParentConsole()
+
+	// Los modos que no escanean no necesitan elevación: pedir UAC para leer un
+	// JSON sería absurdo.
+	if *showVersion {
+		fmt.Println("mirkkkov " + agentVersion)
+		return
+	}
+	if *verifyPath != "" {
+		os.Exit(runVerify(*verifyPath))
+	}
 
 	elevated, err := privilege.IsElevated()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "no se pudo verificar la elevación: %v\n", err)
 		os.Exit(2)
 	}
+	loadKnownCheats()
 	if !elevated {
 		// Relanzarse pidiendo UAC en vez de rendirse con un mensaje que el
 		// usuario probablemente ni llegue a leer: la ventana de consola se
@@ -141,7 +230,15 @@ func runGUI(timeout time.Duration, outPath string, elevated bool) error {
 	}
 	return ui.Run(ui.Options{
 		Title: "Mirkkkov",
-		OnScan: func(emit func(ui.Event)) {
+		ExportHTML: func(html string) (string, error) {
+			// El HTML exportado queda al lado del JSON, con el mismo nombre.
+			htmlPath := strings.TrimSuffix(outPath, filepath.Ext(outPath)) + ".html"
+			if err := os.WriteFile(htmlPath, []byte(html), 0o600); err != nil {
+				return "", err
+			}
+			return htmlPath, nil
+		},
+		OnScan: func(ctx context.Context, emit func(ui.Event)) {
 			opts := agent.Options{
 				Timeout: timeout,
 				Version: agentVersion,
@@ -172,12 +269,12 @@ func runGUI(timeout time.Duration, outPath string, elevated bool) error {
 					},
 				},
 			}
-			rep, err := agent.RunLive(context.Background(), opts, transport.NewLocalUploader(outPath))
+			rep, err := agent.RunLive(ctx, opts, transport.NewLocalUploader(outPath))
 			if err != nil {
 				emit(ui.Event{Kind: ui.KindScanError, Error: err.Error()})
 				return
 			}
-			emit(ui.Event{Kind: ui.KindScanDone, Report: &rep})
+			emit(ui.Event{Kind: ui.KindScanDone, Report: &rep, ReportPath: outPath})
 		},
 	})
 }
@@ -289,7 +386,11 @@ func runConsole(timeout time.Duration, serverURL, outPath string, elevated bool)
 		Machine:   machineInfo(elevated),
 	}
 
-	rep, err := agent.RunLive(context.Background(), opts, up)
+	// Ctrl+C cancela el contexto en vez de matar el proceso: el snapshot VSS
+	// se cierra y el reporte parcial queda escrito con estado ABORTED.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	rep, err := agent.RunLive(ctx, opts, up)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "el escaneo terminó con error: %v\n", err)
 		os.Exit(1)

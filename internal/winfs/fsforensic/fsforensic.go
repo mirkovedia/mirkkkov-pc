@@ -7,9 +7,23 @@ import (
 )
 
 // forensicExts son las extensiones de ejecutables/scripts que se retienen.
+// .ahk (AutoHotkey) entra porque los macros de Free Fire se escriben en él.
 var forensicExts = map[string]bool{
 	".exe": true, ".dll": true, ".sys": true, ".bat": true, ".ps1": true,
-	".cmd": true, ".vbs": true, ".scr": true, ".msi": true,
+	".cmd": true, ".vbs": true, ".scr": true, ".msi": true, ".ahk": true,
+}
+
+// hasExecutableToken reporta si alguno de los tokens del nombre es una
+// extensión forense. Cubre tanto "esp.dll" como los nombres compuestos que
+// llevan la extensión en el medio: "INJECTOR.EXE-1234.pf" (Prefetch) o
+// "cheat.exe.bak". Un asset web como "esp-locale-ar-sa.js.gz" no lo tiene.
+func hasExecutableToken(name string) bool {
+	for _, tk := range tokenize(name) {
+		if forensicExts["."+tk] {
+			return true
+		}
+	}
+	return false
 }
 
 // strongMarkers son marcadores largos e inequívocos: ninguna palabra legítima
@@ -86,8 +100,13 @@ func HasStrongMarker(name string) bool {
 // hasWeakMarker reporta si algún token del nombre es exactamente un marcador
 // ambiguo. Es evidencia floja: "run-hook.cmd" y "esp.dll" matchean igual, y el
 // primero es un script de desarrollo cualquiera.
+//
+// Solo cuenta sobre nombres que llevan una extensión ejecutable en alguno de
+// sus tokens. Sin ese filtro, los assets web de Teams ("esp-coachmark-….js.gz",
+// "…-loader-….js.gz") producían 174 hallazgos MEDIUM en una máquina limpia:
+// un token ambiguo sobre un archivo que no puede ejecutarse no dice nada.
 func hasWeakMarker(name string) bool {
-	if IsSystemComponent(name) {
+	if IsSystemComponent(name) || !hasExecutableToken(name) {
 		return false
 	}
 	for _, tk := range tokenize(name) {

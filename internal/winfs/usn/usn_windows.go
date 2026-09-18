@@ -11,8 +11,9 @@ import (
 
 	"golang.org/x/sys/windows"
 
-	"github.com/telagem/agent-windows/internal/winfs/fsforensic"
-	"github.com/telagem/agent-windows/internal/winfs/ntfspath"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/fsforensic"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/ntfspath"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/wintime"
 )
 
 // ErrUnsupported se mantiene por paridad con la build no-Windows (no debería
@@ -64,14 +65,60 @@ func ReadJournal(ctx context.Context, volume string) ([]Entry, error) {
 
 // queryJournal devuelve el UsnJournalID (offset 0 del USN_JOURNAL_DATA_V0).
 func queryJournal(h windows.Handle) (uint64, error) {
+	info, err := queryJournalInfo(h)
+	if err != nil {
+		return 0, err
+	}
+	return info.ID, nil
+}
+
+// queryJournalInfo lee USN_JOURNAL_DATA_V0: UsnJournalID(8) FirstUsn(8)
+// NextUsn(8) LowestValidUsn(8) MaxUsn(8) MaximumSize(8) AllocationDelta(8).
+func queryJournalInfo(h windows.Handle) (JournalInfo, error) {
 	out := make([]byte, 80)
 	var ret uint32
 	err := windows.DeviceIoControl(h, fsctlQueryUsnJournal,
 		nil, 0, &out[0], uint32(len(out)), &ret, nil)
 	if err != nil {
-		return 0, fmt.Errorf("QUERY_USN_JOURNAL (¿journal inactivo?): %w", err)
+		if errors.Is(err, windows.ERROR_JOURNAL_NOT_ACTIVE) || errors.Is(err, windows.ERROR_JOURNAL_DELETE_IN_PROGRESS) {
+			return JournalInfo{}, ErrJournalNotActive
+		}
+		return JournalInfo{}, fmt.Errorf("QUERY_USN_JOURNAL: %w", err)
 	}
-	return binary.LittleEndian.Uint64(out[0:8]), nil
+	if ret < 24 {
+		return JournalInfo{}, fmt.Errorf("QUERY_USN_JOURNAL: respuesta corta (%d bytes)", ret)
+	}
+	id := binary.LittleEndian.Uint64(out[0:8])
+	return JournalInfo{
+		ID: id,
+		// El UsnJournalID es el FILETIME del momento en que se creó el
+		// journal. No está documentado como tal, pero es así desde NT y es
+		// lo que toda herramienta forense usa para fechar la recreación.
+		Created:  wintime.FiletimeToTime(id).UTC(),
+		FirstUsn: int64(binary.LittleEndian.Uint64(out[8:16])),
+		NextUsn:  int64(binary.LittleEndian.Uint64(out[16:24])),
+	}, nil
+}
+
+// QueryJournal abre el volumen y devuelve los metadatos del journal sin
+// leer ningún record. Devuelve ErrJournalNotActive si el journal fue
+// borrado o nunca existió.
+func QueryJournal(volume string) (JournalInfo, error) {
+	pathPtr, err := windows.UTF16PtrFromString(volume)
+	if err != nil {
+		return JournalInfo{}, fmt.Errorf("path de volumen inválido %q: %w", volume, err)
+	}
+	h, err := windows.CreateFile(
+		pathPtr,
+		windows.GENERIC_READ,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE,
+		nil, windows.OPEN_EXISTING, 0, 0,
+	)
+	if err != nil {
+		return JournalInfo{}, fmt.Errorf("abrir %s: %w", volume, err)
+	}
+	defer windows.CloseHandle(h)
+	return queryJournalInfo(h)
 }
 
 // enumParents recorre ENUM_USN_DATA acumulando FileRef -> {nombre, padre}.

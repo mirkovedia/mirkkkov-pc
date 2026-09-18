@@ -4,7 +4,7 @@ package reghivetest
 import (
 	"testing"
 
-	"github.com/telagem/agent-windows/internal/winfs/reghive"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/reghive"
 )
 
 func TestBuilderRoundTrip(t *testing.T) {

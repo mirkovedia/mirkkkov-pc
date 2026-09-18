@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/telagem/agent-windows/internal/report"
+	"github.com/mirkovedia/mirkkkov-pc/internal/report"
 )
 
 const maxRetries = 3

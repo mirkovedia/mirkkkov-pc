@@ -40,11 +40,11 @@ func buildV3(fileRef, parentRef uint64, usn int64, ft uint64, reason uint32, nam
 	recLen := fixed + len(nameBytes)
 	buf := make([]byte, recLen)
 	binary.LittleEndian.PutUint32(buf[0:4], uint32(recLen))
-	binary.LittleEndian.PutUint16(buf[4:6], 3) // MajorVersion
-	binary.LittleEndian.PutUint64(buf[0x08:0x10], fileRef)      // FileRef low64
-	binary.LittleEndian.PutUint64(buf[0x10:0x18], 0)            // FileRef high64
-	binary.LittleEndian.PutUint64(buf[0x18:0x20], parentRef)    // ParentRef low64
-	binary.LittleEndian.PutUint64(buf[0x20:0x28], 0)            // ParentRef high64
+	binary.LittleEndian.PutUint16(buf[4:6], 3)               // MajorVersion
+	binary.LittleEndian.PutUint64(buf[0x08:0x10], fileRef)   // FileRef low64
+	binary.LittleEndian.PutUint64(buf[0x10:0x18], 0)         // FileRef high64
+	binary.LittleEndian.PutUint64(buf[0x18:0x20], parentRef) // ParentRef low64
+	binary.LittleEndian.PutUint64(buf[0x20:0x28], 0)         // ParentRef high64
 	binary.LittleEndian.PutUint64(buf[0x28:0x30], uint64(usn))
 	binary.LittleEndian.PutUint64(buf[0x30:0x38], ft)
 	binary.LittleEndian.PutUint32(buf[0x38:0x3C], reason)

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/telagem/agent-windows/internal/collector"
-	"github.com/telagem/agent-windows/internal/report"
+	"github.com/mirkovedia/mirkkkov-pc/internal/collector"
+	"github.com/mirkovedia/mirkkkov-pc/internal/report"
 )
 
 func resultWith(name string, arts ...collector.Artifact) collector.Result {

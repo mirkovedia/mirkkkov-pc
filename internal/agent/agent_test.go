@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/telagem/agent-windows/internal/report"
-	"github.com/telagem/agent-windows/internal/transport"
+	"github.com/mirkovedia/mirkkkov-pc/internal/report"
+	"github.com/mirkovedia/mirkkkov-pc/internal/transport"
 )
 
 type fakeUploader struct {

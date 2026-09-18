@@ -5,8 +5,8 @@ import (
 	"encoding/binary"
 	"strings"
 
-	"github.com/telagem/agent-windows/internal/winfs/reghive"
-	"github.com/telagem/agent-windows/internal/winfs/wintext"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/reghive"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/wintext"
 )
 
 // DriverService es un servicio del registro con sus metadatos crudos.
@@ -70,15 +70,19 @@ func IsNonMicrosoftDriver(s DriverService) bool {
 	if s.Type != serviceKernelDriver && s.Type != serviceFileSystemDriver {
 		return false
 	}
-	return !strings.Contains(normalizeImagePath(s.ImagePath), `\windows\system32\drivers\`)
+	return !strings.Contains(NormalizeImagePath(s.ImagePath), `\windows\system32\drivers\`)
 }
 
-// normalizeImagePath resuelve los alias que Windows permite en ImagePath: el
+// NormalizeImagePath resuelve los alias que Windows permite en ImagePath: el
 // prefijo de dispositivo NT (\??\), el alias \SystemRoot\, y las rutas
 // relativas sin prefijo (frecuentes en drivers de filesystem integrados,
 // p.ej. "system32\drivers\netbt.sys"), implícitamente relativas a
-// %SystemRoot%.
-func normalizeImagePath(path string) string {
+// %SystemRoot%. Devuelve la ruta en minúsculas.
+//
+// Es exportada porque el motor de severidad tiene que aplicar exactamente la
+// misma normalización: cuando cada capa tenía la suya, 56 drivers de
+// DriverStore salían como "fuera de la ruta estándar" solo por el alias.
+func NormalizeImagePath(path string) string {
 	p := strings.ToLower(strings.TrimSpace(path))
 	p = strings.TrimPrefix(p, `\??\`)
 	switch {

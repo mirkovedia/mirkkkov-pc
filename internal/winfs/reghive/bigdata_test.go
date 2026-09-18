@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/telagem/agent-windows/internal/winfs/reghive/reghivetest"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/reghive/reghivetest"
 )
 
 // TestValueReassemblesBigData cubre la causa raíz del fallo de shimcache en

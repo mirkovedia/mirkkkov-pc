@@ -7,9 +7,9 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/telagem/agent-windows/internal/collector"
-	"github.com/telagem/agent-windows/internal/winfs/reghive"
-	"github.com/telagem/agent-windows/internal/winfs/wintime"
+	"github.com/mirkovedia/mirkkkov-pc/internal/collector"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/reghive"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/wintime"
 )
 
 // Entry es una ejecución registrada por BAM (Background Activity Moderator).

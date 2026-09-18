@@ -14,12 +14,13 @@ const (
 	SevCritical = "CRITICAL"
 )
 
-// Categorías de hallazgo (subconjunto de las declaradas en report.Finding que
-// esta fase realmente produce).
+// Categorías de hallazgo.
 const (
 	CatAntiForensic = "ANTI_FORENSIC"
 	CatExecution    = "EXECUTION"
 	CatPersistence  = "PERSISTENCE"
+	CatEmulator     = "EMULATOR"
+	CatKnownCheat   = "KNOWN_CHEAT"
 )
 
 // Rule es la clasificación base de un tipo de artefacto, antes de escalar.
@@ -50,6 +51,30 @@ var baseRules = map[string]Rule{
 	// tareas no se pudo enumerar. Va en baseRules (y no como tipo neutro) para
 	// que se emita como hallazgo propio y sea visible en el reporte.
 	"scheduled_task_scan_incomplete": {CatExecution, SevInfo, 0.0},
+
+	// Fase 8: emuladores y macros. Tener un emulador instalado es INFO
+	// (Free Fire tiene lobbies de emulador); los macros y las herramientas
+	// de automatización son lo que está prohibido.
+	"emulator.installed": {CatEmulator, SevInfo, 0.0},
+	"emulator.macro":     {CatEmulator, SevMedium, 0.6},
+	"macro_tool":         {CatEmulator, SevLow, 0.4},
+	"macro_script":       {CatEmulator, SevMedium, 0.6},
+
+	// Fase 8: persistencia fuera de servicios y tareas. Run/RunOnce y las
+	// carpetas de inicio son neutras (no figuran acá); estas tres no.
+	"ifeo_debugger":   {CatPersistence, SevMedium, 0.6},
+	"appinit_dll":     {CatPersistence, SevHigh, 0.7},
+	"winlogon_hijack": {CatPersistence, SevHigh, 0.8},
+
+	// Fase 8: configuración que apaga fuentes forenses.
+	"config.prefetch_disabled": {CatAntiForensic, SevMedium, 0.6},
+	"config.prefetch_empty":    {CatAntiForensic, SevMedium, 0.5},
+	"config.eventlog_disabled": {CatAntiForensic, SevHigh, 0.8},
+	"usn.journal_disabled":     {CatAntiForensic, SevHigh, 0.7},
+	"usn.journal_recreated":    {CatAntiForensic, SevMedium, 0.6},
+	// Un cambio de hora solo pesa junto a un timestomp en la misma ventana
+	// (ver combos); solo, es LOW: cualquiera ajusta el reloj alguna vez.
+	"eventlog.time_changed": {CatAntiForensic, SevLow, 0.4},
 }
 
 // neutralRule es la clasificación de la evidencia de ejecución normal y de

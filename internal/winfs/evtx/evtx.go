@@ -10,7 +10,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/telagem/agent-windows/internal/winfs/wintime"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/wintime"
 )
 
 // Tipos de value BinXML soportados.

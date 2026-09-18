@@ -7,7 +7,7 @@ import (
 	"context"
 	"errors"
 
-	winmft "github.com/telagem/agent-windows/internal/winfs/mft"
+	winmft "github.com/mirkovedia/mirkkkov-pc/internal/winfs/mft"
 )
 
 // ErrUnsupported se devuelve al intentar acceso raw NTFS fuera de Windows.

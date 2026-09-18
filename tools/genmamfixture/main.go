@@ -15,9 +15,9 @@ import (
 )
 
 const (
-	xpressHuff   = 0x0004
-	chunkSize    = 4096
-	outDir       = `internal\winfs\compression\testdata`
+	xpressHuff = 0x0004
+	chunkSize  = 4096
+	outDir     = `internal\winfs\compression\testdata`
 )
 
 func ptr[T any](p *T) unsafe.Pointer { return unsafe.Pointer(p) }

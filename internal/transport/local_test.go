@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/telagem/agent-windows/internal/report"
+	"github.com/mirkovedia/mirkkkov-pc/internal/report"
 )
 
 func TestLocalUploaderImplementsUploader(t *testing.T) {

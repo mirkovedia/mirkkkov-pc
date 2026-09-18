@@ -3,10 +3,12 @@ package verdict
 
 import (
 	"encoding/json"
+	"regexp"
 	"strings"
 
-	"github.com/telagem/agent-windows/internal/collector"
-	"github.com/telagem/agent-windows/internal/winfs/fsforensic"
+	"github.com/mirkovedia/mirkkkov-pc/internal/collector"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/fsforensic"
+	winservices "github.com/mirkovedia/mirkkkov-pc/internal/winfs/services"
 )
 
 // suspiciousConfidence es la confianza que se fija cuando el nombre del
@@ -64,6 +66,137 @@ func escalateByDetail(a collector.Artifact, r Rule) Rule {
 		return serviceDriverRule(a, r)
 	case "eventlog.tamper_signal":
 		return tamperSignalRule(a, r)
+	case "autorun", "process":
+		return unsignedBinaryRule(a, r)
+	case "macro_tool":
+		return macroToolRule(a, r)
+	case "ifeo_debugger":
+		return ifeoRule(a, r)
+	case "eventlog.time_changed":
+		return timeChangeRule(a, r)
+	case "amcache":
+		return knownCheatRule(a, r)
+	}
+	return r
+}
+
+// userWritableLocations son rutas donde un usuario sin privilegios puede
+// dejar un ejecutable: es donde vive lo que se descargó y se corrió sin
+// instalar nada. Todo el perfil cuenta, no solo AppData.
+var userWritableLocations = []string{`c:\users\`, `\programdata\`, `\temp\`, `\tmp\`}
+
+// unsignedBinaryRule escala los artefactos neutros que llevan firma
+// (autoruns y procesos) cuando el binario no la tiene Y está en una ruta
+// escribible por el usuario. El peso depende de qué es:
+//
+//   - un proceso → LOW. Correr algo sin firma desde el perfil es lo que hace
+//     un cheat, pero también TLauncher, un launcher indie, uv, bun o cualquier
+//     script de pip: la primera calibración real lo tenía en MEDIUM y dos de
+//     esos alcanzaban para un SOSPECHOSO sobre una máquina limpia. Queda
+//     visible para quien revisa, sin mover el veredicto por sí solo.
+//   - un autorun → MEDIUM. Que además arranque con Windows es más raro y
+//     más deliberado.
+//
+// Sin firma fuera del perfil (Program Files) no dice nada: go.exe y las
+// utilidades de Git tampoco están firmadas. Firmado o desconocido, neutro.
+func unsignedBinaryRule(a collector.Artifact, r Rule) Rule {
+	var payload struct {
+		Path      string `json:"path"`
+		Signature signaturePayload
+	}
+	if err := json.Unmarshal(a.Data, &payload); err != nil || !payload.Signature.untrusted() {
+		return r
+	}
+	lower := strings.ToLower(payload.Path)
+	writable := false
+	for _, loc := range userWritableLocations {
+		if strings.Contains(lower, loc) {
+			writable = true
+			break
+		}
+	}
+	if !writable {
+		return r
+	}
+	if a.Type == "autorun" {
+		r.Severity = SevMedium
+		r.Confidence = 0.5
+		return r
+	}
+	r.Severity = SevLow
+	r.Confidence = 0.3
+	return r
+}
+
+// macroToolRule baja a INFO el software de periféricos que trae macros pero
+// que tiene cualquiera (Logitech, Razer, Corsair). Las herramientas cuyo
+// único fin es automatizar entrada conservan el LOW base.
+func macroToolRule(a collector.Artifact, r Rule) Rule {
+	var payload struct {
+		Weight string `json:"weight"`
+	}
+	if err := json.Unmarshal(a.Data, &payload); err != nil {
+		return r
+	}
+	if payload.Weight == "info" {
+		r.Severity = SevInfo
+		r.Confidence = 0.0
+	}
+	return r
+}
+
+// knownDebuggers son depuradores IFEO que instalan herramientas legítimas
+// (Visual Studio, Sysinternals). Duplicado a propósito con el colector: el
+// motor es puro y no importa paquetes de colectores.
+var knownDebuggers = []string{"vsjitdebugger", "procdump", "gflags", "windbg"}
+
+// ifeoRule baja a INFO los depuradores de herramientas de desarrollo.
+func ifeoRule(a collector.Artifact, r Rule) Rule {
+	var payload struct {
+		Debugger string `json:"debugger"`
+	}
+	if err := json.Unmarshal(a.Data, &payload); err != nil {
+		return r
+	}
+	lower := strings.ToLower(payload.Debugger)
+	for _, k := range knownDebuggers {
+		if strings.Contains(lower, k) {
+			r.Severity = SevInfo
+			r.Confidence = 0.0
+			return r
+		}
+	}
+	return r
+}
+
+// timeChangeRule baja a INFO los cambios de hora que hace el propio sistema.
+func timeChangeRule(a collector.Artifact, r Rule) Rule {
+	var payload struct {
+		Legit bool `json:"legit"`
+	}
+	if err := json.Unmarshal(a.Data, &payload); err != nil {
+		return r
+	}
+	if payload.Legit {
+		r.Severity = SevInfo
+		r.Confidence = 0.0
+	}
+	return r
+}
+
+// knownCheatRule convierte una entrada de Amcache cuyo SHA-1 figura en la
+// lista de cheats conocidos en un hallazgo CRITICAL de categoría KNOWN_CHEAT.
+// Amcache conserva el hash aunque el archivo ya no exista: es la única
+// fuente que identifica un binario borrado sin ambigüedad.
+func knownCheatRule(a collector.Artifact, r Rule) Rule {
+	var payload struct {
+		SHA1 string `json:"sha1"`
+	}
+	if err := json.Unmarshal(a.Data, &payload); err != nil || payload.SHA1 == "" {
+		return r
+	}
+	if _, ok := KnownCheat(payload.SHA1); ok {
+		return Rule{Category: CatKnownCheat, Severity: SevCritical, Confidence: 0.95}
 	}
 	return r
 }
@@ -111,7 +244,7 @@ func desyncTaskRule(a collector.Artifact, r Rule) Rule {
 	}
 	switch payload.Kind {
 	case "hive_only":
-		if strings.HasPrefix(strings.ToLower(payload.RelPath), `microsoft\`) {
+		if strings.HasPrefix(strings.ToLower(payload.RelPath), `microsoft\`) || isWindowsManagedRootTask(payload.RelPath) {
 			// Windows guarda varias de sus tareas propias SOLO en el
 			// registro, sin XML en disco. Se verificó sobre una máquina real:
 			// el escaneo enumeró el árbol completo sin un solo error de
@@ -136,7 +269,56 @@ func desyncTaskRule(a collector.Artifact, r Rule) Rule {
 	return r
 }
 
-// eventDesyncRule baja a INFO la única dirección que no puede ser sana.
+// perUserTaskSuffix matchea los nombres de tarea que terminan en un SID de
+// usuario, con o sin sufijo numérico: "…-S-1-5-21-…-1001" y
+// "PostponeDeviceSetupToast_S-1-5-21-…-1001_0". Windows y sus componentes
+// (OneDrive, Optimize Start Menu Cache Files, DeviceSetupManager) las crean y
+// borran por cuenta propia para cada usuario.
+var perUserTaskSuffix = regexp.MustCompile(`(?i)[-_]S-1-5-(?:18|19|20|21-\d+-\d+-\d+-\d+)(?:_\d+)?$`)
+
+// windowsManagedRootTasks son tareas que Windows crea en la raíz del árbol de
+// tareas, fuera de Microsoft\, y cuya entrada en TaskCache puede existir sin
+// XML en disco sin que nadie las haya tocado. Se comparan por prefijo, en
+// minúsculas.
+var windowsManagedRootTasks = []string{
+	"postponedevicesetuptoast",
+	"user_feed_synchronization-",
+	"optimize start menu cache files-",
+	"createexplorershellunelevatedtask",
+	"microsoftedgeupdatetask",
+	"onedrive ",
+}
+
+// isWindowsManagedRootTask reporta si la ruta relativa de una tarea es una de
+// las que Windows administra por su cuenta en la raíz del árbol. Para ellas,
+// "está en el registro pero no en disco" es un estado normal, no un borrado:
+// el único CRITICAL del reporte real del 2026-08-05 fue exactamente esto.
+func isWindowsManagedRootTask(relPath string) bool {
+	lower := strings.ToLower(relPath)
+	if strings.Contains(lower, `\`) {
+		return false // solo tareas de la raíz
+	}
+	if perUserTaskSuffix.MatchString(lower) {
+		return true
+	}
+	for _, p := range windowsManagedRootTasks {
+		if strings.HasPrefix(lower, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// nonEvidenceDesyncKinds son las direcciones de eventlog.desync que no pueden
+// ser sanas: los Event Logs rotan, así que un servicio o tarea registrados
+// hace meses nunca van a tener su evento de instalación disponible. La
+// ausencia no prueba nada; se reporta para auditoría sin mover el veredicto.
+var nonEvidenceDesyncKinds = map[string]bool{
+	"task_no_register_log":   true,
+	"service_no_install_log": true,
+}
+
+// eventDesyncRule baja a INFO las direcciones que no pueden ser sanas.
 func eventDesyncRule(a collector.Artifact, r Rule) Rule {
 	var payload struct {
 		Kind string
@@ -144,26 +326,37 @@ func eventDesyncRule(a collector.Artifact, r Rule) Rule {
 	if err := json.Unmarshal(a.Data, &payload); err != nil {
 		return r
 	}
-	if payload.Kind == "task_no_register_log" {
-		// Los Event Logs rotan: una tarea registrada hace meses nunca va a
-		// tener su evento 106 disponible. La ausencia no prueba nada, así que
-		// se reporta para auditoría pero no mueve el veredicto.
+	if nonEvidenceDesyncKinds[payload.Kind] {
 		r.Severity = SevInfo
 		r.Confidence = 0.0
 	}
 	return r
 }
 
-// scheduledTaskRule baja a INFO las tareas propias de Windows: el sistema trae
-// decenas marcadas como ocultas y no son señal por sí solas.
+// signaturePayload es la firma que los colectores de Fase 8 adjuntan a sus
+// artefactos. Status vacío significa "este artefacto no trae firma" (colector
+// viejo o campo ausente) y se trata igual que unknown.
+type signaturePayload struct {
+	Status string
+	Signer string
+}
+
+func (s signaturePayload) signed() bool    { return s.Status == "signed" }
+func (s signaturePayload) untrusted() bool { return s.Status == "unsigned" || s.Status == "invalid" }
+
+// scheduledTaskRule baja a INFO las tareas propias de Windows (el sistema trae
+// decenas marcadas como ocultas) y las que lanzan un ejecutable con firma
+// válida: una tarea oculta de un actualizador firmado es rutina. Una oculta
+// cuyo ejecutable no tiene firma conserva el MEDIUM base.
 func scheduledTaskRule(a collector.Artifact, r Rule) Rule {
 	var payload struct {
-		RelPath string
+		RelPath   string
+		Signature signaturePayload
 	}
 	if err := json.Unmarshal(a.Data, &payload); err != nil {
 		return r
 	}
-	if strings.HasPrefix(strings.ToLower(payload.RelPath), `microsoft\`) {
+	if strings.HasPrefix(strings.ToLower(payload.RelPath), `microsoft\`) || payload.Signature.signed() {
 		r.Severity = SevInfo
 		r.Confidence = 0.0
 	}
@@ -171,30 +364,58 @@ func scheduledTaskRule(a collector.Artifact, r Rule) Rule {
 }
 
 // normalDriverLocations son ubicaciones donde el software instalado deja sus
-// drivers de forma legítima (antivirus, GPU, VPN, virtualización).
+// drivers de forma legítima (antivirus, GPU, VPN, virtualización). Se comparan
+// contra la ruta YA normalizada por services.NormalizeImagePath, que resuelve
+// \SystemRoot\, \??\ y las rutas relativas a c:\windows\.
 var normalDriverLocations = []string{
 	`\program files\`,
 	`\program files (x86)\`,
-	`\windows\system32\driverstore\`,
+	`c:\windows\system32\`,
+	`c:\windows\syswow64\`,
 }
 
-// serviceDriverRule baja a INFO los drivers en ubicaciones normales de
-// instalación. La heurística de Fase 3C es por ruta, no por firma, así que sin
-// este ajuste marca decenas de drivers legítimos en cualquier máquina real.
+// serviceDriverRule pondera un driver por su firma y por su ubicación:
+//
+//   - firma válida → INFO, esté donde esté. Un driver firmado por Wellbia en
+//     C:\Windows es el anticheat de otro juego, no un rootkit.
+//   - sin firma o firma inválida fuera de las rutas normales → HIGH. Windows
+//     10+ no carga drivers de kernel sin firma salvo en modo de prueba, así
+//     que uno registrado como servicio es una anomalía real.
+//   - sin firma en una ruta normal → MEDIUM: raro, pero puede ser un resto
+//     de un instalador viejo.
+//   - firma desconocida (archivo borrado, API falló) → la heurística por
+//     ruta de siempre: INFO en rutas normales, MEDIUM base fuera.
 func serviceDriverRule(a collector.Artifact, r Rule) Rule {
 	var payload struct {
 		ImagePath string
+		Signature signaturePayload
 	}
 	if err := json.Unmarshal(a.Data, &payload); err != nil {
 		return r
 	}
-	lower := strings.ToLower(payload.ImagePath)
+	if payload.Signature.signed() {
+		r.Severity = SevInfo
+		r.Confidence = 0.0
+		return r
+	}
+	normalized := winservices.NormalizeImagePath(payload.ImagePath)
+	normal := false
 	for _, loc := range normalDriverLocations {
-		if strings.Contains(lower, loc) {
-			r.Severity = SevInfo
-			r.Confidence = 0.0
-			return r
+		if strings.Contains(normalized, loc) {
+			normal = true
+			break
 		}
+	}
+	switch {
+	case payload.Signature.untrusted() && !normal:
+		r.Severity = SevHigh
+		r.Confidence = 0.7
+	case payload.Signature.untrusted() && normal:
+		r.Severity = SevMedium
+		r.Confidence = 0.6
+	case normal:
+		r.Severity = SevInfo
+		r.Confidence = 0.0
 	}
 	return r
 }
