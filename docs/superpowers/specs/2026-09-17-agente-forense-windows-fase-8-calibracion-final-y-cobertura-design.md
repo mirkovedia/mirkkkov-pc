@@ -1,7 +1,7 @@
 # Agente Forense Windows — Fase 8: Calibración final, robustez y cobertura (Design)
 
 **Fecha:** 2026-09-17
-**Estado:** Aprobado por el usuario ("lo dejo en tus manos, implementa todo lo mejorable")
+**Estado:** Implementado (2026-09-18). Pendiente la validación con un escaneo elevado real; ver el plan.
 **Depende de:** Fases 1–7
 
 ## Contexto

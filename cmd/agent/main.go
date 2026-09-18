@@ -59,13 +59,37 @@ func attachParentConsole() {
 	if r, _, _ := attach.Call(uintptr(attachParentProcess)); r == 0 {
 		return // no había consola padre: se ejecutó con doble clic
 	}
-	if out, err := os.OpenFile("CONOUT$", os.O_WRONLY, 0); err == nil {
-		os.Stdout = out
-		os.Stderr = out
+	// Solo se reabre sobre la consola lo que NO vino redirigido. Pisar un
+	// stdout que ya apunta a un archivo o a un pipe rompe
+	// `mirkkkov.exe -verify r.json > salida.txt` y cualquier uso desde un
+	// script: la salida se iría a la consola y el archivo quedaría vacío.
+	if !stdHandleUsable(windows.STD_OUTPUT_HANDLE) {
+		if out, err := os.OpenFile("CONOUT$", os.O_WRONLY, 0); err == nil {
+			os.Stdout = out
+		}
 	}
-	if in, err := os.OpenFile("CONIN$", os.O_RDONLY, 0); err == nil {
-		os.Stdin = in
+	if !stdHandleUsable(windows.STD_ERROR_HANDLE) {
+		if out, err := os.OpenFile("CONOUT$", os.O_WRONLY, 0); err == nil {
+			os.Stderr = out
+		}
 	}
+	if !stdHandleUsable(windows.STD_INPUT_HANDLE) {
+		if in, err := os.OpenFile("CONIN$", os.O_RDONLY, 0); err == nil {
+			os.Stdin = in
+		}
+	}
+}
+
+// stdHandleUsable reporta si un descriptor estándar ya apunta a algo real
+// (archivo, pipe o consola). En un binario -H windowsgui lanzado sin
+// redirección vienen en cero.
+func stdHandleUsable(id uint32) bool {
+	h, err := windows.GetStdHandle(id)
+	if err != nil || h == 0 || h == windows.InvalidHandle {
+		return false
+	}
+	t, err := windows.GetFileType(h)
+	return err == nil && t != windows.FILE_TYPE_UNKNOWN
 }
 
 // machineInfo arma el estado de la máquina que va al reporte. Lo comparten el
