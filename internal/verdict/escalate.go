@@ -82,13 +82,23 @@ func escalateByDetail(a collector.Artifact, r Rule) Rule {
 
 // userWritableLocations son rutas donde un usuario sin privilegios puede
 // dejar un ejecutable: es donde vive lo que se descargó y se corrió sin
-// instalar nada.
-var userWritableLocations = []string{`\appdata\`, `\temp\`, `\tmp\`, `\downloads\`, `\desktop\`, `\escritorio\`, `\public\`, `\programdata\`}
+// instalar nada. Todo el perfil cuenta, no solo AppData.
+var userWritableLocations = []string{`c:\users\`, `\programdata\`, `\temp\`, `\tmp\`}
 
 // unsignedBinaryRule escala los artefactos neutros que llevan firma
-// (autoruns y procesos) cuando el binario no la tiene: MEDIUM si además está
-// en una ruta escribible por el usuario, LOW en cualquier otra. Firmado o
-// desconocido, quedan como evidencia neutra.
+// (autoruns y procesos) cuando el binario no la tiene Y está en una ruta
+// escribible por el usuario. El peso depende de qué es:
+//
+//   - un proceso → LOW. Correr algo sin firma desde el perfil es lo que hace
+//     un cheat, pero también TLauncher, un launcher indie, uv, bun o cualquier
+//     script de pip: la primera calibración real lo tenía en MEDIUM y dos de
+//     esos alcanzaban para un SOSPECHOSO sobre una máquina limpia. Queda
+//     visible para quien revisa, sin mover el veredicto por sí solo.
+//   - un autorun → MEDIUM. Que además arranque con Windows es más raro y
+//     más deliberado.
+//
+// Sin firma fuera del perfil (Program Files) no dice nada: go.exe y las
+// utilidades de Git tampoco están firmadas. Firmado o desconocido, neutro.
 func unsignedBinaryRule(a collector.Artifact, r Rule) Rule {
 	var payload struct {
 		Path      string `json:"path"`
@@ -98,12 +108,20 @@ func unsignedBinaryRule(a collector.Artifact, r Rule) Rule {
 		return r
 	}
 	lower := strings.ToLower(payload.Path)
+	writable := false
 	for _, loc := range userWritableLocations {
 		if strings.Contains(lower, loc) {
-			r.Severity = SevMedium
-			r.Confidence = 0.5
-			return r
+			writable = true
+			break
 		}
+	}
+	if !writable {
+		return r
+	}
+	if a.Type == "autorun" {
+		r.Severity = SevMedium
+		r.Confidence = 0.5
+		return r
 	}
 	r.Severity = SevLow
 	r.Confidence = 0.3

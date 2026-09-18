@@ -62,9 +62,26 @@ func Verify(path string) Result {
 	if v, ok := cache.Load(key); ok {
 		return v.(Result)
 	}
+	if isPackagedApp(key) {
+		// No se cachea: es una decisión por ruta, más barata que el mapa.
+		return Result{Status: StatusUnknown, Detail: "aplicación empaquetada (MSIX): la firma es del paquete, no del binario"}
+	}
 	r := verifyFile(path)
 	cache.Store(key, r)
 	return r
+}
+
+// isPackagedApp reporta si la ruta (en minúsculas) cae dentro de WindowsApps.
+//
+// Las apps de la Store (WhatsApp, Widgets, el propio Bloc de notas nuevo) se
+// firman a nivel de paquete: AppxSignature.p7x cubre el bloque entero y los
+// .exe de adentro no llevan firma embebida ni figuran en los catálogos del
+// sistema. WinVerifyTrust los ve "sin firma" y sería una acusación falsa: la
+// carpeta pertenece a TrustedInstaller y nadie escribe ahí sin que Windows
+// haya validado el paquete. La primera calibración real de Fase 8 marcó
+// WhatsApp y WidgetService por esto.
+func isPackagedApp(lowerPath string) bool {
+	return strings.Contains(lowerPath, `\program files\windowsapps\`)
 }
 
 // ResetCache vacía la caché. Solo para tests.

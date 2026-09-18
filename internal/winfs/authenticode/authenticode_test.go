@@ -37,3 +37,19 @@ func TestIsTrusted(t *testing.T) {
 		}
 	}
 }
+
+// TestPackagedAppsAreNeverUnsigned: la calibración real de Fase 8 marcó
+// WhatsApp.Root.exe y WidgetService.exe como "sin firma". Las apps MSIX se
+// firman a nivel de paquete; afirmar que no tienen firma es falso.
+func TestPackagedAppsAreNeverUnsigned(t *testing.T) {
+	ResetCache()
+	for _, p := range []string{
+		`C:\Program Files\WindowsApps\5319275A.WhatsAppDesktop_2.2636.100.0_x64__cv1g1gvanyjgm\WhatsApp.Root.exe`,
+		`c:\program files\windowsapps\Microsoft.WidgetsPlatformRuntime_1.6.19.0_x64__8wekyb3d8bbwe\WidgetService\WidgetService.exe`,
+	} {
+		r := Verify(p)
+		if r.Status != StatusUnknown || r.Detail == "" {
+			t.Errorf("%s: %+v, want unknown con detalle", p, r)
+		}
+	}
+}

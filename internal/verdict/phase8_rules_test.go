@@ -35,8 +35,8 @@ func TestUnsignedAutorunInAppDataIsMedium(t *testing.T) {
 	b := art("autorun", `C:\Program Files\Vendor\tool.exe`, map[string]any{
 		"path": `C:\Program Files\Vendor\tool.exe`, "Signature": map[string]string{"Status": "unsigned"},
 	})
-	if got := escalate(b, ruleFor("autorun")); got.Severity != SevLow {
-		t.Fatalf("sin firma en Program Files: Severity = %s, want LOW", got.Severity)
+	if got := escalate(b, ruleFor("autorun")); got.Severity != SevInfo {
+		t.Fatalf("sin firma en Program Files: Severity = %s, want INFO", got.Severity)
 	}
 	c := art("autorun", `C:\Users\x\AppData\Local\Discord\Update.exe`, map[string]any{
 		"path": `C:\Users\x\AppData\Local\Discord\Update.exe`, "Signature": map[string]string{"Status": "signed"},
@@ -50,8 +50,15 @@ func TestUnsignedProcessRule(t *testing.T) {
 	a := art("process", `C:\Users\x\Downloads\x.exe`, map[string]any{
 		"path": `C:\Users\x\Downloads\x.exe`, "Signature": map[string]string{"Status": "unsigned"},
 	})
-	if got := escalate(a, ruleFor("process")); got.Severity != SevMedium {
-		t.Fatalf("Severity = %s", got.Severity)
+	// LOW y no MEDIUM: ver la calibración real en unsignedBinaryRule.
+	if got := escalate(a, ruleFor("process")); got.Severity != SevLow {
+		t.Fatalf("Severity = %s, want LOW", got.Severity)
+	}
+	pf := art("process", `C:\Program Files\Go\bin\go.exe`, map[string]any{
+		"path": `C:\Program Files\Go\bin\go.exe`, "Signature": map[string]string{"Status": "unsigned"},
+	})
+	if got := escalate(pf, ruleFor("process")); got.Severity != SevInfo {
+		t.Fatalf("sin firma en Program Files: Severity = %s, want INFO", got.Severity)
 	}
 	if titleOf(a) != "Proceso en ejecución sin firma válida" {
 		t.Fatalf("title = %q", titleOf(a))
@@ -140,5 +147,25 @@ func TestNeutralPhase8TypesAreSummarized(t *testing.T) {
 	}
 	if v.Level != report.LevelLimpio {
 		t.Fatalf("Level = %s", v.Level)
+	}
+}
+
+// TestDeveloperMachineProcessesAreLimpio reproduce la primera calibración
+// real de Fase 8: uv, bun y un launcher de pip corriendo sin firma desde el
+// perfil daban SOSPECHOSO sobre una máquina limpia.
+func TestDeveloperMachineProcessesAreLimpio(t *testing.T) {
+	proc := func(p string) collector.Artifact {
+		return art("process", p, map[string]any{"path": p, "Signature": map[string]string{"Status": "unsigned"}})
+	}
+	results := []collector.Result{{Collector: "processes", Artifacts: []collector.Artifact{
+		proc(`C:\Users\x\.bun\bin\bun.exe`),
+		proc(`C:\Users\x\.local\bin\uv.exe`),
+		proc(`C:\Users\x\AppData\Local\uv\cache\archive-v0\abc\Scripts\chroma-mcp.exe`),
+		proc(`C:\Users\x\AppData\Roaming\.minecraft\TLauncher.exe`),
+		proc(`C:\Program Files\Git\usr\bin\grep.exe`),
+	}}}
+	_, v := Evaluate(results)
+	if v.Level != report.LevelLimpio {
+		t.Fatalf("Level = %s (%s); want LIMPIO", v.Level, v.Summary)
 	}
 }
