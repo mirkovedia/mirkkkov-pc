@@ -29,7 +29,7 @@ func Preview(a collector.Artifact) PreviewResult {
 	return PreviewResult{
 		Category: r.Category,
 		Severity: r.Severity,
-		Title:    titleFor(a.Type),
+		Title:    titleOf(a),
 		Notable:  severityRank(r.Severity) > severityRank(SevInfo),
 	}
 }

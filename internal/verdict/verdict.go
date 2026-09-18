@@ -2,6 +2,7 @@
 package verdict
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/mirkovedia/mirkkkov-pc/internal/collector"
@@ -67,7 +68,7 @@ func Evaluate(results []collector.Result) ([]report.Finding, report.Verdict) {
 				Category:   rule.Category,
 				Severity:   rule.Severity,
 				Confidence: rule.Confidence,
-				Title:      titleFor(a.Type),
+				Title:      titleOf(a),
 				Evidence:   string(a.Data),
 				Artifact:   a.Source,
 			}
@@ -106,6 +107,29 @@ func Evaluate(results []collector.Result) ([]report.Finding, report.Verdict) {
 	findings = append(findings, summaries...)
 
 	return findings, globalVerdict(findings, failed)
+}
+
+// titleOf da el título de un artefacto: el del tipo, salvo que el detalle
+// del payload merezca uno más preciso. "Driver instalado fuera de la ruta
+// estándar" es verdad para un driver sin firma en Temp, pero lo que importa
+// es que no tiene firma.
+func titleOf(a collector.Artifact) string {
+	var payload struct {
+		Signature signaturePayload
+	}
+	if err := json.Unmarshal(a.Data, &payload); err == nil && payload.Signature.untrusted() {
+		switch a.Type {
+		case "service_driver":
+			return "Driver de kernel sin firma válida"
+		case "scheduled_task":
+			return "Tarea programada oculta con ejecutable sin firma"
+		case "process":
+			return "Proceso en ejecución sin firma válida"
+		case "autorun":
+			return "Programa de inicio automático sin firma válida"
+		}
+	}
+	return titleFor(a.Type)
 }
 
 // titleFor da un título legible por tipo de artefacto.

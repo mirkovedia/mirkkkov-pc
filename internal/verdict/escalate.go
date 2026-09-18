@@ -202,16 +202,30 @@ func eventDesyncRule(a collector.Artifact, r Rule) Rule {
 	return r
 }
 
-// scheduledTaskRule baja a INFO las tareas propias de Windows: el sistema trae
-// decenas marcadas como ocultas y no son señal por sí solas.
+// signaturePayload es la firma que los colectores de Fase 8 adjuntan a sus
+// artefactos. Status vacío significa "este artefacto no trae firma" (colector
+// viejo o campo ausente) y se trata igual que unknown.
+type signaturePayload struct {
+	Status string
+	Signer string
+}
+
+func (s signaturePayload) signed() bool    { return s.Status == "signed" }
+func (s signaturePayload) untrusted() bool { return s.Status == "unsigned" || s.Status == "invalid" }
+
+// scheduledTaskRule baja a INFO las tareas propias de Windows (el sistema trae
+// decenas marcadas como ocultas) y las que lanzan un ejecutable con firma
+// válida: una tarea oculta de un actualizador firmado es rutina. Una oculta
+// cuyo ejecutable no tiene firma conserva el MEDIUM base.
 func scheduledTaskRule(a collector.Artifact, r Rule) Rule {
 	var payload struct {
-		RelPath string
+		RelPath   string
+		Signature signaturePayload
 	}
 	if err := json.Unmarshal(a.Data, &payload); err != nil {
 		return r
 	}
-	if strings.HasPrefix(strings.ToLower(payload.RelPath), `microsoft\`) {
+	if strings.HasPrefix(strings.ToLower(payload.RelPath), `microsoft\`) || payload.Signature.signed() {
 		r.Severity = SevInfo
 		r.Confidence = 0.0
 	}
@@ -229,23 +243,48 @@ var normalDriverLocations = []string{
 	`c:\windows\syswow64\`,
 }
 
-// serviceDriverRule baja a INFO los drivers en ubicaciones normales de
-// instalación. La heurística de Fase 3C es por ruta, no por firma, así que sin
-// este ajuste marca decenas de drivers legítimos en cualquier máquina real.
+// serviceDriverRule pondera un driver por su firma y por su ubicación:
+//
+//   - firma válida → INFO, esté donde esté. Un driver firmado por Wellbia en
+//     C:\Windows es el anticheat de otro juego, no un rootkit.
+//   - sin firma o firma inválida fuera de las rutas normales → HIGH. Windows
+//     10+ no carga drivers de kernel sin firma salvo en modo de prueba, así
+//     que uno registrado como servicio es una anomalía real.
+//   - sin firma en una ruta normal → MEDIUM: raro, pero puede ser un resto
+//     de un instalador viejo.
+//   - firma desconocida (archivo borrado, API falló) → la heurística por
+//     ruta de siempre: INFO en rutas normales, MEDIUM base fuera.
 func serviceDriverRule(a collector.Artifact, r Rule) Rule {
 	var payload struct {
 		ImagePath string
+		Signature signaturePayload
 	}
 	if err := json.Unmarshal(a.Data, &payload); err != nil {
 		return r
 	}
+	if payload.Signature.signed() {
+		r.Severity = SevInfo
+		r.Confidence = 0.0
+		return r
+	}
 	normalized := winservices.NormalizeImagePath(payload.ImagePath)
+	normal := false
 	for _, loc := range normalDriverLocations {
 		if strings.Contains(normalized, loc) {
-			r.Severity = SevInfo
-			r.Confidence = 0.0
-			return r
+			normal = true
+			break
 		}
+	}
+	switch {
+	case payload.Signature.untrusted() && !normal:
+		r.Severity = SevHigh
+		r.Confidence = 0.7
+	case payload.Signature.untrusted() && normal:
+		r.Severity = SevMedium
+		r.Confidence = 0.6
+	case normal:
+		r.Severity = SevInfo
+		r.Confidence = 0.0
 	}
 	return r
 }

@@ -163,7 +163,7 @@ func openVolume(letter string) (*winVolume, error) {
 	return v, nil
 }
 
-func (v *winVolume) Close() error    { return windows.CloseHandle(v.h) }
+func (v *winVolume) Close() error     { return windows.CloseHandle(v.h) }
 func (v *winVolume) ClusterSize() int { return v.cluster }
 
 // ReadAt lee len(buf) bytes en offset usando OVERLAPPED como posición
