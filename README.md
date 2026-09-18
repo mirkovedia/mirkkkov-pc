@@ -13,9 +13,18 @@ Un solo `.exe`, sin instalador, sin CGO, sin puertos abiertos.
 
 El agente pide elevación por UAC solo, abre su propia ventana, muestra qué
 revisa y qué no, y espera tu consentimiento explícito antes de tocar nada.
-Durante el escaneo vas viendo el avance de cada fuente y podés cancelarlo; al
-final, el veredicto con los hallazgos agrupados, filtrables y con su evidencia
-desplegable.
+
+La pantalla gira alrededor del **registro de actividad**: una tira, como la de
+un sismógrafo, donde queda dibujada hora por hora la actividad de los últimos
+30 días en tres tintas (qué se ejecutó, qué pasó con los archivos, cuándo hubo
+sesión). Está en blanco al pedir consentimiento, se dibuja fuente por fuente
+mientras la revisión corre, y al final cada hallazgo con fecha es una marca
+sobre ella que lleva a su evidencia. Una ráfaga de borrados media hora antes de
+la revisión se ve sin leer una sola fila.
+
+Debajo, el veredicto con los hallazgos agrupados, filtrables por severidad y
+texto, ordenables por fecha, con la evidencia desplegable y la firma de cada
+binario. La revisión se puede cancelar en cualquier momento.
 
 El reporte queda como `reporte.json` junto al ejecutable. Desde la pantalla de
 resultados se puede exportar además una copia `reporte.html` para mandarle a

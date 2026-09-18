@@ -268,11 +268,25 @@ func globalVerdict(findings []report.Finding, failed []string) report.Verdict {
 func summaryFor(level string, criticals, highs, mediums int, failed []string) string {
 	switch level {
 	case report.LevelEvidenciaFuerte:
-		return fmt.Sprintf("Evidencia fuerte: %d señales críticas y %d de alta severidad.", criticals, highs)
+		return fmt.Sprintf("Evidencia fuerte: %s y %d de alta severidad.",
+			count(criticals, "señal crítica", "señales críticas"), highs)
 	case report.LevelSospechoso:
-		return fmt.Sprintf("Indicios a revisar: %d señales de alta severidad y %d de severidad media.", highs, mediums)
+		return fmt.Sprintf("Indicios a revisar: %s y %d de severidad media.",
+			count(highs, "señal de alta severidad", "señales de alta severidad"), mediums)
 	case report.LevelIncompleto:
+		if len(failed) == 1 {
+			return "Sin hallazgos, pero el escaneo fue parcial: falló 1 colector."
+		}
 		return fmt.Sprintf("Sin hallazgos, pero el escaneo fue parcial: fallaron %d colectores.", len(failed))
 	}
 	return "Sin hallazgos relevantes."
+}
+
+// count concuerda un sustantivo con su cantidad: "1 señal crítica", "2
+// señales críticas".
+func count(n int, one, many string) string {
+	if n == 1 {
+		return "1 " + one
+	}
+	return fmt.Sprintf("%d %s", n, many)
 }
