@@ -1,0 +1,14 @@
+# Lista de SHA-1 de cheats y loaders conocidos de Free Fire.
+#
+# Formato: un hash por línea, seguido de un nombre o comentario.
+#   0123456789abcdef0123456789abcdef01234567 NombreDelCheat v1.2 (loader)
+#
+# El agente compara estos hashes contra los SHA-1 que Amcache registra de
+# cada ejecutable que corrió en la máquina, incluso si el archivo ya fue
+# borrado. Una coincidencia produce un hallazgo CRITICAL de categoría
+# KNOWN_CHEAT.
+#
+# Se distribuye sin hashes: cada entrada debe salir de una muestra
+# verificada por la comunidad que opera el agente, nunca de una lista
+# copiada de internet. También se puede dejar un cheats.txt con este mismo
+# formato junto a mirkkkov.exe; se carga al iniciar.

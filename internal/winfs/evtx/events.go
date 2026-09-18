@@ -2,8 +2,10 @@ package evtx
 
 import (
 	"strconv"
+	"time"
 
 	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/wintext"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/wintime"
 )
 
 // fieldSpec describe qué nombre y cómo interpretar cada substitution por
@@ -54,6 +56,39 @@ func renderValue(v SubValue) string {
 		if len(v.Raw) >= 4 {
 			return strconv.FormatUint(uint64(readU32(v.Raw, 0)), 10)
 		}
+	case TypeFileTime:
+		if len(v.Raw) >= 8 {
+			ft := uint64(readU32(v.Raw, 0)) | uint64(readU32(v.Raw, 4))<<32
+			return wintime.FiletimeToTime(ft).UTC().Format(time.RFC3339Nano)
+		}
 	}
 	return ""
+}
+
+// StringValues devuelve, en orden, las substitutions de tipo string de un
+// record. Sirve para los eventos cuyo mapeo posicional no está verificado
+// contra un log real: el colector busca lo que necesita (una ruta de
+// proceso, un usuario) entre todas en vez de apostar a un índice.
+func (r Record) StringValues() []string {
+	var out []string
+	for _, s := range r.Subs {
+		if s.Type == TypeString {
+			if v := wintext.DecodeUTF16(s.Raw); v != "" {
+				out = append(out, v)
+			}
+		}
+	}
+	return out
+}
+
+// TimeValues devuelve, en orden, las substitutions FILETIME de un record.
+func (r Record) TimeValues() []time.Time {
+	var out []time.Time
+	for _, s := range r.Subs {
+		if s.Type == TypeFileTime && len(s.Raw) >= 8 {
+			ft := uint64(readU32(s.Raw, 0)) | uint64(readU32(s.Raw, 4))<<32
+			out = append(out, wintime.FiletimeToTime(ft).UTC())
+		}
+	}
+	return out
 }

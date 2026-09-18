@@ -3,7 +3,6 @@
 package authenticode
 
 import (
-	"encoding/hex"
 	"errors"
 	"os"
 	"syscall"
@@ -301,6 +300,3 @@ func embeddedSigner(path string) string {
 	}
 	return windows.UTF16ToString(name[:n-1])
 }
-
-// hexOf existe para depuración de tests: hash legible.
-func hexOf(b []byte) string { return hex.EncodeToString(b) }

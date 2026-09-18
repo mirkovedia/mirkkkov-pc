@@ -99,9 +99,51 @@ type evaluated struct {
 // hallazgos de un mismo escaneo. Son deliberadamente pocas: cada combo es una
 // afirmación fuerte y su falso positivo es caro.
 func applyCombos(items []evaluated) []evaluated {
+	applyTimeChangeNearTimestomp(items)
 	applyAntiForensicCluster(items)
 	applyPersistenceWithClearedLogs(items)
 	return items
+}
+
+// applyTimeChangeNearTimestomp: un cambio manual de hora dentro de la
+// ventana de un timestomp es la receta para fabricar fechas viejas en
+// archivos nuevos. El timestomp sube a CRITICAL y el cambio de hora, que
+// solo vale LOW, sube a MEDIUM para que el cluster anti-forense lo cuente.
+// Corre antes que el cluster a propósito.
+func applyTimeChangeNearTimestomp(items []evaluated) {
+	var changes, stomps []int
+	for i, it := range items {
+		switch {
+		case it.artType == "eventlog.time_changed" && it.finding.Severity != SevInfo && it.hasTime:
+			changes = append(changes, i)
+		case it.artType == "mft_timestomp" && it.hasTime:
+			stomps = append(stomps, i)
+		}
+	}
+	for _, s := range stomps {
+		for _, c := range changes {
+			delta := items[s].at.Sub(items[c].at)
+			if delta < 0 {
+				delta = -delta
+			}
+			if delta > correlationWindow {
+				continue
+			}
+			items[s].finding.Severity = SevCritical
+			items[s].finding.Confidence = minFloat(items[s].finding.Confidence+temporalBoost, 1.0)
+			if severityRank(items[c].finding.Severity) < severityRank(SevMedium) {
+				items[c].finding.Severity = SevMedium
+				items[c].finding.Confidence = 0.6
+			}
+		}
+	}
+}
+
+func minFloat(a, b float64) float64 {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // applyAntiForensicCluster: dos o más señales ANTI_FORENSIC de tipos DISTINTOS

@@ -66,6 +66,119 @@ func escalateByDetail(a collector.Artifact, r Rule) Rule {
 		return serviceDriverRule(a, r)
 	case "eventlog.tamper_signal":
 		return tamperSignalRule(a, r)
+	case "autorun", "process":
+		return unsignedBinaryRule(a, r)
+	case "macro_tool":
+		return macroToolRule(a, r)
+	case "ifeo_debugger":
+		return ifeoRule(a, r)
+	case "eventlog.time_changed":
+		return timeChangeRule(a, r)
+	case "amcache":
+		return knownCheatRule(a, r)
+	}
+	return r
+}
+
+// userWritableLocations son rutas donde un usuario sin privilegios puede
+// dejar un ejecutable: es donde vive lo que se descargó y se corrió sin
+// instalar nada.
+var userWritableLocations = []string{`\appdata\`, `\temp\`, `\tmp\`, `\downloads\`, `\desktop\`, `\escritorio\`, `\public\`, `\programdata\`}
+
+// unsignedBinaryRule escala los artefactos neutros que llevan firma
+// (autoruns y procesos) cuando el binario no la tiene: MEDIUM si además está
+// en una ruta escribible por el usuario, LOW en cualquier otra. Firmado o
+// desconocido, quedan como evidencia neutra.
+func unsignedBinaryRule(a collector.Artifact, r Rule) Rule {
+	var payload struct {
+		Path      string `json:"path"`
+		Signature signaturePayload
+	}
+	if err := json.Unmarshal(a.Data, &payload); err != nil || !payload.Signature.untrusted() {
+		return r
+	}
+	lower := strings.ToLower(payload.Path)
+	for _, loc := range userWritableLocations {
+		if strings.Contains(lower, loc) {
+			r.Severity = SevMedium
+			r.Confidence = 0.5
+			return r
+		}
+	}
+	r.Severity = SevLow
+	r.Confidence = 0.3
+	return r
+}
+
+// macroToolRule baja a INFO el software de periféricos que trae macros pero
+// que tiene cualquiera (Logitech, Razer, Corsair). Las herramientas cuyo
+// único fin es automatizar entrada conservan el LOW base.
+func macroToolRule(a collector.Artifact, r Rule) Rule {
+	var payload struct {
+		Weight string `json:"weight"`
+	}
+	if err := json.Unmarshal(a.Data, &payload); err != nil {
+		return r
+	}
+	if payload.Weight == "info" {
+		r.Severity = SevInfo
+		r.Confidence = 0.0
+	}
+	return r
+}
+
+// knownDebuggers son depuradores IFEO que instalan herramientas legítimas
+// (Visual Studio, Sysinternals). Duplicado a propósito con el colector: el
+// motor es puro y no importa paquetes de colectores.
+var knownDebuggers = []string{"vsjitdebugger", "procdump", "gflags", "windbg"}
+
+// ifeoRule baja a INFO los depuradores de herramientas de desarrollo.
+func ifeoRule(a collector.Artifact, r Rule) Rule {
+	var payload struct {
+		Debugger string `json:"debugger"`
+	}
+	if err := json.Unmarshal(a.Data, &payload); err != nil {
+		return r
+	}
+	lower := strings.ToLower(payload.Debugger)
+	for _, k := range knownDebuggers {
+		if strings.Contains(lower, k) {
+			r.Severity = SevInfo
+			r.Confidence = 0.0
+			return r
+		}
+	}
+	return r
+}
+
+// timeChangeRule baja a INFO los cambios de hora que hace el propio sistema.
+func timeChangeRule(a collector.Artifact, r Rule) Rule {
+	var payload struct {
+		Legit bool `json:"legit"`
+	}
+	if err := json.Unmarshal(a.Data, &payload); err != nil {
+		return r
+	}
+	if payload.Legit {
+		r.Severity = SevInfo
+		r.Confidence = 0.0
+	}
+	return r
+}
+
+// knownCheatRule convierte una entrada de Amcache cuyo SHA-1 figura en la
+// lista de cheats conocidos en un hallazgo CRITICAL de categoría KNOWN_CHEAT.
+// Amcache conserva el hash aunque el archivo ya no exista: es la única
+// fuente que identifica un binario borrado sin ambigüedad.
+func knownCheatRule(a collector.Artifact, r Rule) Rule {
+	var payload struct {
+		SHA1 string `json:"sha1"`
+	}
+	if err := json.Unmarshal(a.Data, &payload); err != nil || payload.SHA1 == "" {
+		return r
+	}
+	if _, ok := KnownCheat(payload.SHA1); ok {
+		return Rule{Category: CatKnownCheat, Severity: SevCritical, Confidence: 0.95}
 	}
 	return r
 }

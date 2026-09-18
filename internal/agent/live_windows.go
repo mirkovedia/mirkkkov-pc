@@ -5,17 +5,22 @@ package agent
 
 import (
 	"context"
+	"time"
 
 	"github.com/mirkovedia/mirkkkov-pc/internal/collector"
 	"github.com/mirkovedia/mirkkkov-pc/internal/collector/amcache"
 	"github.com/mirkovedia/mirkkkov-pc/internal/collector/bam"
 	deletedcol "github.com/mirkovedia/mirkkkov-pc/internal/collector/deleted"
+	"github.com/mirkovedia/mirkkkov-pc/internal/collector/emulator"
 	eventlogcol "github.com/mirkovedia/mirkkkov-pc/internal/collector/eventlog"
 	mftcol "github.com/mirkovedia/mirkkkov-pc/internal/collector/mft"
+	"github.com/mirkovedia/mirkkkov-pc/internal/collector/persistence"
 	"github.com/mirkovedia/mirkkkov-pc/internal/collector/prefetch"
+	"github.com/mirkovedia/mirkkkov-pc/internal/collector/processes"
 	schedulercol "github.com/mirkovedia/mirkkkov-pc/internal/collector/scheduler"
 	servicescol "github.com/mirkovedia/mirkkkov-pc/internal/collector/services"
 	"github.com/mirkovedia/mirkkkov-pc/internal/collector/shimcache"
+	"github.com/mirkovedia/mirkkkov-pc/internal/collector/sysconfig"
 	usncol "github.com/mirkovedia/mirkkkov-pc/internal/collector/usn"
 	"github.com/mirkovedia/mirkkkov-pc/internal/report"
 	"github.com/mirkovedia/mirkkkov-pc/internal/transport"
@@ -64,15 +69,29 @@ func RunLive(ctx context.Context, opts Options, up transport.Uploader) (report.R
 		}
 	}
 
+	var installDate time.Time
+	if opts.Machine.InstallDate != nil {
+		installDate = *opts.Machine.InstallDate
+	}
+	usn := usncol.New()
+	usn.InstallDate = installDate
+
 	collectors := []collector.Collector{
-		prefetch.New(),
-		usncol.New(),
-		mftcol.New(),
-		deletedcol.New(),
+		// Volátil: lo que corre ahora desaparece al cerrar la ventana.
+		processes.New(),
+		// Registro y configuración.
 		bam.New(hives.system),
 		shimcache.New(hives.system),
 		amcache.New(hives.amcache),
 		servicescol.New(hives.system),
+		persistence.New(hives.software),
+		emulator.New(hives.software),
+		sysconfig.New(hives.system, installDate),
+		// Disco.
+		prefetch.New(),
+		usn,
+		mftcol.New(),
+		deletedcol.New(),
 		schedulercol.New(`C:\Windows\System32\Tasks`, hives.software),
 		eventlogcol.New(liveSecurityLog, liveSystemLog, liveTaskSchedLog, hives.system, hives.software),
 	}

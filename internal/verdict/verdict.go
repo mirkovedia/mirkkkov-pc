@@ -70,7 +70,7 @@ func Evaluate(results []collector.Result) ([]report.Finding, report.Verdict) {
 				Confidence: rule.Confidence,
 				Title:      titleOf(a),
 				Evidence:   string(a.Data),
-				Artifact:   a.Source,
+				Artifact:   artifactOf(a),
 			}
 			// La fecha del hecho va al hallazgo, no solo al contexto de los
 			// combos: sin ella el reporte no tiene línea de tiempo.
@@ -116,20 +116,43 @@ func Evaluate(results []collector.Result) ([]report.Finding, report.Verdict) {
 func titleOf(a collector.Artifact) string {
 	var payload struct {
 		Signature signaturePayload
+		SHA1      string `json:"sha1"`
 	}
-	if err := json.Unmarshal(a.Data, &payload); err == nil && payload.Signature.untrusted() {
-		switch a.Type {
-		case "service_driver":
-			return "Driver de kernel sin firma válida"
-		case "scheduled_task":
-			return "Tarea programada oculta con ejecutable sin firma"
-		case "process":
-			return "Proceso en ejecución sin firma válida"
-		case "autorun":
-			return "Programa de inicio automático sin firma válida"
+	if err := json.Unmarshal(a.Data, &payload); err == nil {
+		if a.Type == "amcache" {
+			if name, ok := KnownCheat(payload.SHA1); ok {
+				return "Ejecutable identificado como cheat conocido: " + name
+			}
+		}
+		if payload.Signature.untrusted() {
+			switch a.Type {
+			case "service_driver":
+				return "Driver de kernel sin firma válida"
+			case "scheduled_task":
+				return "Tarea programada oculta con ejecutable sin firma"
+			case "process":
+				return "Proceso en ejecución sin firma válida"
+			case "autorun":
+				return "Programa de inicio automático sin firma válida"
+			}
 		}
 	}
 	return titleFor(a.Type)
+}
+
+// artifactOf devuelve la ruta que identifica al artefacto en el hallazgo.
+// Casi siempre es Source; Amcache es la excepción: su Source es el hive y
+// lo que importa es el ejecutable que registró.
+func artifactOf(a collector.Artifact) string {
+	if a.Type == "amcache" {
+		var payload struct {
+			Path string `json:"path"`
+		}
+		if err := json.Unmarshal(a.Data, &payload); err == nil && payload.Path != "" {
+			return payload.Path
+		}
+	}
+	return a.Source
 }
 
 // titleFor da un título legible por tipo de artefacto.
@@ -156,6 +179,44 @@ func titleFor(artifactType string) string {
 		return "Archivo borrado recuperado del MFT"
 	case "scheduled_task_scan_incomplete":
 		return "Enumeración de tareas incompleta (directorios sin permiso)"
+
+	// Fase 8.
+	case "emulator.installed":
+		return "Emulador de Android instalado"
+	case "emulator.macro":
+		return "Macros o grabaciones de entrada en el emulador"
+	case "macro_tool":
+		return "Herramienta de automatización de entrada instalada"
+	case "macro_script":
+		return "Script de macro en el perfil del usuario"
+	case "autorun":
+		return "Programa de inicio automático"
+	case "startup_entry":
+		return "Archivo en la carpeta de inicio"
+	case "ifeo_debugger":
+		return "Depurador enganchado a un ejecutable (IFEO)"
+	case "appinit_dll":
+		return "DLL inyectada en todos los procesos (AppInit_DLLs)"
+	case "winlogon_hijack":
+		return "Shell o Userinit de Winlogon alterado"
+	case "process":
+		return "Proceso en ejecución"
+	case "config.prefetch_disabled":
+		return "Prefetch deshabilitado por configuración"
+	case "config.prefetch_empty":
+		return "Carpeta Prefetch vacía en una instalación antigua"
+	case "config.eventlog_disabled":
+		return "Servicio de registro de eventos deshabilitado"
+	case "usn.journal_disabled":
+		return "Journal de cambios del sistema de archivos desactivado"
+	case "usn.journal_recreated":
+		return "Journal de cambios recreado recientemente"
+	case "eventlog.time_changed":
+		return "Cambio manual de la hora del sistema"
+	case "usn":
+		return "Actividad sobre un archivo con nombre sospechoso"
+	case "prefetch", "bam", "shimcache", "amcache":
+		return "Ejecución registrada de un programa con nombre sospechoso"
 	}
 	return "Artefacto " + artifactType
 }

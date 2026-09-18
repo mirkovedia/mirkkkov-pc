@@ -15,6 +15,7 @@ import (
 	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/fsforensic"
 	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/reghive"
 	winscheduler "github.com/mirkovedia/mirkkkov-pc/internal/winfs/scheduler"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/wincmd"
 )
 
 // Collector recolecta tareas programadas sospechosas/ocultas y su cross-check
@@ -114,52 +115,13 @@ type taskArtifact struct {
 // lanza un ejecutable sin firma es otra cosa.
 func (c *Collector) enrich(t winscheduler.TaskDefinition) taskArtifact {
 	art := taskArtifact{TaskDefinition: t}
-	path := commandPath(t.Command)
+	path := wincmd.ExePath(t.Command)
 	if c.Verify == nil || path == "" {
 		art.Signature = authenticode.Result{Status: authenticode.StatusUnknown}
 		return art
 	}
 	art.Signature = c.Verify(path)
 	return art
-}
-
-// commandPath convierte el <Command> de una tarea en una ruta verificable:
-// sin comillas y con las variables %VAR% expandidas. Devuelve "" si no
-// parece una ruta absoluta (un comando como "cmd.exe" no se puede verificar
-// sin resolver PATH, y adivinar sería peor).
-func commandPath(command string) string {
-	p := strings.TrimSpace(command)
-	p = strings.Trim(p, `"`)
-	p = expandWinEnv(p)
-	if len(p) < 3 || p[1] != ':' || (p[2] != '\\' && p[2] != '/') {
-		return ""
-	}
-	return p
-}
-
-// expandWinEnv expande %VAR% con el entorno del proceso.
-func expandWinEnv(s string) string {
-	var out strings.Builder
-	for {
-		start := strings.IndexByte(s, '%')
-		if start < 0 {
-			break
-		}
-		end := strings.IndexByte(s[start+1:], '%')
-		if end < 0 {
-			break
-		}
-		name := s[start+1 : start+1+end]
-		out.WriteString(s[:start])
-		if v := os.Getenv(name); v != "" {
-			out.WriteString(v)
-		} else {
-			out.WriteString("%" + name + "%")
-		}
-		s = s[start+1+end+1:]
-	}
-	out.WriteString(s)
-	return out.String()
 }
 
 // isReportable filtra a tareas ocultas o con comando/argumentos de nombre

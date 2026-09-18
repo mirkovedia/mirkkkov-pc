@@ -86,6 +86,19 @@ func machineInfo(elevated bool) report.MachineInfo {
 	return info
 }
 
+// loadKnownCheats suma al motor los hashes de un cheats.txt que esté junto
+// al ejecutable. Es opcional y silencioso: la comunidad que opera el agente
+// mantiene esa lista; el binario no la trae.
+func loadKnownCheats() {
+	exe, err := os.Executable()
+	if err != nil {
+		return
+	}
+	if _, err := verdict.LoadKnownCheatsFile(filepath.Join(filepath.Dir(exe), "cheats.txt")); err != nil {
+		fmt.Fprintf(os.Stderr, "AVISO: no se pudo leer cheats.txt: %v\n", err)
+	}
+}
+
 // runVerify comprueba la cadena de custodia y la firma de un reporte ya
 // generado. No necesita elevación ni Windows: es lo que usa un tercero para
 // saber si el archivo que le mandaron es el que el agente escribió.
@@ -156,6 +169,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "no se pudo verificar la elevación: %v\n", err)
 		os.Exit(2)
 	}
+	loadKnownCheats()
 	if !elevated {
 		// Relanzarse pidiendo UAC en vez de rendirse con un mensaje que el
 		// usuario probablemente ni llegue a leer: la ventana de consola se

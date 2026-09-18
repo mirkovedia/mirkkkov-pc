@@ -67,6 +67,10 @@ func (c *Collector) Collect(ctx context.Context) ([]collector.Artifact, error) {
 			case 1102, 104:
 				logsCleared = true
 				arts = appendJSON(arts, "eventlog.log_cleared", r.Channel, clearEntry(r))
+			case 4616:
+				if r.Channel == "Security" {
+					arts = appendJSON(arts, "eventlog.time_changed", r.Channel, timeChangeEntry(r))
+				}
 			}
 		}
 	}
@@ -115,6 +119,50 @@ type clear struct {
 
 func clearEntry(r evtx.Record) clear {
 	return clear{Time: r.Timestamp, Channel: r.Fields["Channel"], By: r.Fields["SubjectUserName"]}
+}
+
+// timeChange es un evento 4616: alguien cambió la hora del sistema. Es la
+// contraparte del timestomping: para fabricar fechas viejas en archivos
+// nuevos hace falta mover el reloj o editar los timestamps directamente.
+type timeChange struct {
+	Time     time.Time `json:"time"`
+	Process  string    `json:"process,omitempty"`
+	Previous time.Time `json:"previous,omitempty"`
+	New      time.Time `json:"new,omitempty"`
+	// Legit marca los cambios que hace el propio sistema: el servicio de
+	// hora (svchost/W32Time) y las herramientas de sincronización de VM.
+	// Ocurren varias veces al día y no dicen nada.
+	Legit bool `json:"legit"`
+}
+
+// legitTimeChangers son los procesos que ajustan la hora por su cuenta.
+var legitTimeChangers = []string{"svchost.exe", "w32tm", "w32time", "vmtoolsd", "vboxservice", "prl_tools", "lsass.exe", "wininit.exe"}
+
+// timeChangeEntry arma el artefacto sin apostar a un índice de substitution:
+// toma como proceso la primera cadena que termina en .exe y como fechas los
+// dos primeros FILETIME que traiga el record.
+func timeChangeEntry(r evtx.Record) timeChange {
+	tc := timeChange{Time: r.Timestamp}
+	for _, s := range r.StringValues() {
+		if strings.HasSuffix(strings.ToLower(s), ".exe") {
+			tc.Process = s
+			break
+		}
+	}
+	if times := r.TimeValues(); len(times) >= 2 {
+		tc.Previous, tc.New = times[0], times[1]
+	}
+	lower := strings.ToLower(tc.Process)
+	for _, p := range legitTimeChangers {
+		if strings.Contains(lower, p) {
+			tc.Legit = true
+			break
+		}
+	}
+	// Sin proceso identificado no se puede afirmar que fue manual; se marca
+	// como no legítimo pero la regla base es LOW: solo pesa junto a un
+	// timestomp en la misma ventana.
+	return tc
 }
 
 func collectInstalls(log *evtx.Log) []InstallEvent {

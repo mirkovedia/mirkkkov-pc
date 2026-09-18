@@ -8,24 +8,6 @@ import (
 	winscheduler "github.com/mirkovedia/mirkkkov-pc/internal/winfs/scheduler"
 )
 
-func TestCommandPathStripsQuotesAndExpandsEnv(t *testing.T) {
-	t.Setenv("SystemRoot", `C:\Windows`)
-	cases := map[string]string{
-		`"C:\Program Files (x86)\Google\GoogleUpdater\updater.exe"`: `C:\Program Files (x86)\Google\GoogleUpdater\updater.exe`,
-		`%SystemRoot%\System32\svchost.exe`:                         `C:\Windows\System32\svchost.exe`,
-		`C:\Tools\macro.exe`:                                        `C:\Tools\macro.exe`,
-		// Sin ruta absoluta no hay nada que verificar sin adivinar PATH.
-		`cmd.exe`:          "",
-		`%NOEXISTE%\x.exe`: "",
-		``:                 "",
-	}
-	for in, want := range cases {
-		if got := commandPath(in); got != want {
-			t.Errorf("commandPath(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
 // TestEnrichAttachesSignatureOfCommand: la tarea oculta del actualizador de
 // Google fue un MEDIUM del reporte real. Con la firma del ejecutable en el
 // JSON, el motor puede bajarla a INFO sin allowlists por nombre.
