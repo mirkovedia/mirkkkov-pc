@@ -141,7 +141,9 @@ func copyData(vol volume, layout dataLayout, w io.Writer) error {
 		return errors.New("tamaño de clúster inválido")
 	}
 	remaining := int64(layout.size)
-	buf := make([]byte, cluster*chunkClusters)
+	// Alineado: vol es un volumen abierto en crudo y Windows rechaza los
+	// buffers que no estén alineados al sector físico.
+	buf := ntfs.AlignedBuffer(int(cluster * chunkClusters))
 	for _, ext := range layout.extents {
 		extBytes := int64(ext.Length) * cluster
 		diskOff := int64(ext.StartLCN) * cluster

@@ -97,26 +97,101 @@ func HasStrongMarker(name string) bool {
 	return false
 }
 
-// hasWeakMarker reporta si algún token del nombre es exactamente un marcador
-// ambiguo. Es evidencia floja: "run-hook.cmd" y "esp.dll" matchean igual, y el
-// primero es un script de desarrollo cualquiera.
+// vendorNamespaces son los primeros segmentos de los nombres con puntos que
+// usan los ensamblados .NET y las bibliotecas de proveedores:
+// "System.Runtime.Loader.dll", "Microsoft.Extensions.Hosting.dll". Cualquier
+// aplicación .NET trae System.Runtime.Loader.dll; el primer escaneo real en
+// un runner elevado lo marcó MEDIUM por el token "loader".
+var vendorNamespaces = map[string]bool{
+	"system": true, "microsoft": true, "windows": true, "netstandard": true,
+	"mono": true, "xamarin": true, "newtonsoft": true, "unity": true,
+	"unityengine": true, "google": true, "nvidia": true, "intel": true, "amd": true,
+}
+
+// hasWeakMarker reporta si el nombre del archivo lleva un marcador ambiguo en
+// una posición que lo hace el sujeto del nombre. Es evidencia floja:
+// "run-hook.cmd" y "esp.dll" matchean igual, y el primero es un script de
+// desarrollo cualquiera. Por eso se le exige bastante:
 //
-// Solo cuenta sobre nombres que llevan una extensión ejecutable en alguno de
-// sus tokens. Sin ese filtro, los assets web de Teams ("esp-coachmark-….js.gz",
-// "…-loader-….js.gz") producían 174 hallazgos MEDIUM en una máquina limpia:
-// un token ambiguo sobre un archivo que no puede ejecutarse no dice nada.
+//   - el nombre lleva una extensión ejecutable en alguno de sus tokens. Sin
+//     eso, los assets web de Teams ("esp-coachmark-….js.gz") producían 174
+//     hallazgos MEDIUM en una máquina limpia.
+//   - el marcador es el primer o el último token del nombre, sin contar
+//     extensiones, versiones ni hashes. "ff_loader_v2.exe" e "INJECTOR.EXE-
+//     1A2B3C4D.pf" cuentan; "rust-analyzer-proc-macro-srv.exe", donde "macro"
+//     es una palabra del medio de un nombre descriptivo, no.
+//   - el nombre no es un ensamblado con espacio de nombres de proveedor
+//     ("System.Runtime.Loader.dll").
+//
+// Solo mira el nombre del archivo, no los directorios: una carpeta llamada
+// "loader" o "hook" es moneda corriente en cualquier árbol de código.
 func hasWeakMarker(name string) bool {
-	if IsSystemComponent(name) || !hasExecutableToken(name) {
+	if IsSystemComponent(name) {
 		return false
 	}
-	for _, tk := range tokenize(name) {
-		for _, m := range weakMarkers {
-			if tk == m {
-				return true
-			}
+	base := baseName(name)
+	if !hasExecutableToken(base) {
+		return false
+	}
+	stem := stemTokens(base)
+	if len(stem) == 0 {
+		return false
+	}
+	if len(stem) >= 3 && vendorNamespaces[stem[0]] && strings.Count(base, ".") >= 3 {
+		return false
+	}
+	return isWeakMarker(stem[0]) || isWeakMarker(stem[len(stem)-1])
+}
+
+func isWeakMarker(token string) bool {
+	for _, m := range weakMarkers {
+		if token == m {
+			return true
 		}
 	}
 	return false
+}
+
+// baseName devuelve el último componente de una ruta de Windows o POSIX.
+func baseName(path string) string {
+	if i := strings.LastIndexAny(path, `\/`); i >= 0 {
+		return path[i+1:]
+	}
+	return path
+}
+
+// stemTokens devuelve los tokens del nombre sin el ruido del final:
+// extensiones ("exe", "pf"), versiones ("v2", "13") y hashes hexadecimales
+// largos ("1a2b3c4d"). Lo que queda es el nombre propiamente dicho.
+func stemTokens(base string) []string {
+	tokens := tokenize(base)
+	for len(tokens) > 0 && isTrailingNoise(tokens[len(tokens)-1]) {
+		tokens = tokens[:len(tokens)-1]
+	}
+	return tokens
+}
+
+func isTrailingNoise(tk string) bool {
+	if forensicExts["."+tk] || tk == "pf" {
+		return true
+	}
+	digits, hexes := 0, 0
+	for _, r := range tk {
+		switch {
+		case r >= '0' && r <= '9':
+			digits++
+			hexes++
+		case r >= 'a' && r <= 'f':
+			hexes++
+		}
+	}
+	if digits == len(tk) { // "13", "2024"
+		return true
+	}
+	if len(tk) >= 2 && tk[0] == 'v' && digits == len(tk)-1 { // "v2"
+		return true
+	}
+	return len(tk) >= 8 && hexes == len(tk) // hash
 }
 
 // tokenize parte un nombre en tokens en minúscula, cortando por separadores

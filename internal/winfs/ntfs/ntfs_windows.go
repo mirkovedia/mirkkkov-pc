@@ -72,7 +72,7 @@ func ScanDeleted(ctx context.Context, volume string, onProgress func(done, total
 	defer windows.CloseHandle(h)
 
 	// 1. Boot sector → geometría.
-	sector := make([]byte, 512)
+	sector := AlignedBuffer(RawIOAlign)
 	if err := readAt(h, 0, sector); err != nil {
 		return nil, fmt.Errorf("leer boot sector: %w", err)
 	}
@@ -82,10 +82,11 @@ func ScanDeleted(ctx context.Context, volume string, onProgress func(done, total
 	}
 
 	// 2. Registro 0 ($MFT) → data runs de su $DATA.
-	rec0 := make([]byte, boot.BytesPerRecord)
-	if err := readAt(h, int64(boot.MFTCluster)*int64(boot.ClusterSize), rec0); err != nil {
+	rec0buf := AlignedBuffer(RoundUpToAlign(boot.BytesPerRecord))
+	if err := readAt(h, int64(boot.MFTCluster)*int64(boot.ClusterSize), rec0buf); err != nil {
 		return nil, fmt.Errorf("leer registro $MFT: %w", err)
 	}
+	rec0 := rec0buf[:boot.BytesPerRecord]
 	fixed, err := winmft.ApplyFixup(rec0)
 	if err != nil {
 		return nil, fmt.Errorf("fixup del $MFT: %w", err)
@@ -109,7 +110,7 @@ func ScanDeleted(ctx context.Context, volume string, onProgress func(done, total
 		recsPerChunk = 1
 	}
 	readSize := recsPerChunk * recSize
-	buf := make([]byte, readSize)
+	buf := AlignedBuffer(RoundUpToAlign(readSize))[:readSize]
 	carry := make([]byte, 0, recSize) // sobrante de registro que cruza un límite de lectura
 	var ordinal uint64
 

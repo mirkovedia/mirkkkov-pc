@@ -397,6 +397,9 @@ func runConsole(timeout time.Duration, serverURL, outPath string, elevated bool)
 	}
 	fmt.Printf("Escaneo %s: %d hallazgos, estado %s\n", rep.SessionID, len(rep.Findings), rep.Status)
 	fmt.Printf("Veredicto: %s — %s\n", rep.Verdict.Level, rep.Verdict.Summary)
+	for _, d := range rep.Diagnostics {
+		fmt.Println("Diagnóstico: " + d)
+	}
 	if outPath != "" {
 		fmt.Printf("Reporte escrito en %s\n", outPath)
 	}

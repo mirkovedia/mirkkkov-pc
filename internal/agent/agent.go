@@ -23,6 +23,8 @@ type Options struct {
 	// Observer, si tiene callbacks, recibe el avance del escaneo. El modo
 	// consola lo deja vacío y se comporta exactamente como antes.
 	Observer collector.Observer
+	// Diagnostics son notas operativas que van al reporte tal cual.
+	Diagnostics []string
 }
 
 // runWithCollectors ejecuta el flujo completo con colectores y consentimiento
@@ -59,6 +61,7 @@ func runWithCollectors(ctx context.Context, opts Options, up transport.Uploader,
 		StartedAt:    time.Now(),
 		ConsentAt:    consentAt,
 		Machine:      opts.Machine,
+		Diagnostics:  opts.Diagnostics,
 		Nonce:        sess.Nonce,
 		Pubkey:       hex.EncodeToString(pub),
 		Status:       report.StatusComplete,

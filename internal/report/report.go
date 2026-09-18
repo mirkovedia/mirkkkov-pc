@@ -81,11 +81,16 @@ type Report struct {
 	ConsentAt    time.Time      `json:"consentAt"`
 	Machine      MachineInfo    `json:"machine"`
 	Collectors   []CollectorRun `json:"collectors,omitempty"`
-	Findings     []Finding      `json:"findings"`
-	Verdict      Verdict        `json:"verdict"`
-	Nonce        string         `json:"nonce"`
-	Pubkey       string         `json:"pubkey"`
-	HashChain    []string       `json:"hashChain"`
-	Signature    string         `json:"signature"`
-	Status       string         `json:"status"` // COMPLETE | ABORTED | ERROR
+	// Diagnostics son notas operativas del agente (cómo accedió a los hives,
+	// qué camino de respaldo usó). No son evidencia ni entran en la cadena de
+	// custodia: existen para que un escaneo degradado se pueda diagnosticar
+	// leyendo el reporte, sin tener acceso a la máquina.
+	Diagnostics []string  `json:"diagnostics,omitempty"`
+	Findings    []Finding `json:"findings"`
+	Verdict     Verdict   `json:"verdict"`
+	Nonce       string    `json:"nonce"`
+	Pubkey      string    `json:"pubkey"`
+	HashChain   []string  `json:"hashChain"`
+	Signature   string    `json:"signature"`
+	Status      string    `json:"status"` // COMPLETE | ABORTED | ERROR
 }

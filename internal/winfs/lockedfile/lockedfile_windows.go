@@ -148,7 +148,7 @@ func openVolume(letter string) (*winVolume, error) {
 		return nil, fmt.Errorf("abrir el volumen %s en crudo (¿sin privilegios de administrador?): %w", letter, err)
 	}
 	v := &winVolume{h: h}
-	sector := make([]byte, 512)
+	sector := ntfs.AlignedBuffer(ntfs.RawIOAlign)
 	if err := v.ReadAt(0, sector); err != nil {
 		v.Close()
 		return nil, fmt.Errorf("leer boot sector: %w", err)

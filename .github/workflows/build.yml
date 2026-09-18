@@ -84,6 +84,8 @@ jobs:
           d = json.load(open("smoke-reporte.json", encoding="utf-8"))
           print("VEREDICTO:", d["verdict"]["level"], "|", d["verdict"]["summary"])
           print("ESTADO:", d["status"], "| build:", d["machine"].get("build"))
+          for note in d.get("diagnostics", []):
+              print("  diag:", note)
           for c in d.get("collectors", []):
               print("  colector %-16s artefactos=%-6d %6d ms  %s" % (c["name"], c["artifacts"], c["durationMs"], c.get("error", "")))
           sev = collections.Counter(f["severity"] for f in d["findings"])

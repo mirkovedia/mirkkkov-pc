@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/mirkovedia/mirkkkov-pc/internal/collector"
@@ -55,17 +56,38 @@ type hivePaths struct {
 func RunLive(ctx context.Context, opts Options, up transport.Uploader) (report.Report, error) {
 	hives := hivePaths{system: liveSystemHive, software: liveSoftwareHive, amcache: liveAmcacheHive}
 
-	if stage, err := lockedfile.NewStage(); err == nil {
+	// Cómo se accedió a los hives queda anotado en el reporte. En el primer
+	// escaneo real sobre un runner cuatro colectores cayeron con "el archivo
+	// está en uso" y no había forma de saber por qué habían fallado la copia
+	// raw y el snapshot antes de llegar ahí.
+	note := func(format string, args ...any) {
+		opts.Diagnostics = append(opts.Diagnostics, fmt.Sprintf(format, args...))
+	}
+	stage, stageErr := lockedfile.NewStage()
+	if stageErr == nil {
+		// El stage vive hasta que termina el escaneo.
 		defer stage.Close()
-		if staged, ok := stageHives(stage); ok {
+		var staged hivePaths
+		if staged, stageErr = stageHives(stage); stageErr == nil {
 			hives = staged
-		} else if snap, err := vss.Create(`C:\`); err == nil {
+		}
+	}
+
+	if stageErr == nil {
+		note("hives: copia por acceso raw NTFS")
+	} else {
+		note("hives: la copia raw falló: %v", stageErr)
+		if snap, vssErr := vss.Create(`C:\`); vssErr == nil {
 			defer snap.Close()
 			hives = hivePaths{
 				system:   vss.PathIn(snap, `Windows\System32\config\SYSTEM`),
 				software: vss.PathIn(snap, `Windows\System32\config\SOFTWARE`),
 				amcache:  vss.PathIn(snap, `Windows\appcompat\Programs\Amcache.hve`),
 			}
+			note("hives: snapshot VSS")
+		} else {
+			note("hives: el snapshot VSS falló: %v", vssErr)
+			note("hives: se usan las rutas en vivo; los colectores de registro van a fallar")
 		}
 	}
 
@@ -100,17 +122,17 @@ func RunLive(ctx context.Context, opts Options, up transport.Uploader) (report.R
 
 // stageHives copia los tres hives al stage. Es todo o nada: mezclar un hive
 // copiado con uno del snapshot complica el diagnóstico sin ganar nada.
-func stageHives(stage *lockedfile.Stage) (hivePaths, bool) {
+func stageHives(stage *lockedfile.Stage) (hivePaths, error) {
 	var out hivePaths
 	var err error
 	if out.system, err = stage.Copy(liveSystemHive); err != nil {
-		return hivePaths{}, false
+		return hivePaths{}, fmt.Errorf("hive SYSTEM: %w", err)
 	}
 	if out.software, err = stage.Copy(liveSoftwareHive); err != nil {
-		return hivePaths{}, false
+		return hivePaths{}, fmt.Errorf("hive SOFTWARE: %w", err)
 	}
 	if out.amcache, err = stage.Copy(liveAmcacheHive); err != nil {
-		return hivePaths{}, false
+		return hivePaths{}, fmt.Errorf("hive Amcache.hve: %w", err)
 	}
-	return out, true
+	return out, nil
 }
