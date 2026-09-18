@@ -19,29 +19,49 @@ import (
 	usncol "github.com/mirkovedia/mirkkkov-pc/internal/collector/usn"
 	"github.com/mirkovedia/mirkkkov-pc/internal/report"
 	"github.com/mirkovedia/mirkkkov-pc/internal/transport"
+	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/lockedfile"
 	"github.com/mirkovedia/mirkkkov-pc/internal/winfs/vss"
 )
 
-// RunLive arma los colectores reales (tomando hives desde un snapshot VSS) y
-// ejecuta el flujo completo con consentimiento ya otorgado por el CLI.
-func RunLive(ctx context.Context, opts Options, up transport.Uploader) (report.Report, error) {
-	systemHive := `C:\Windows\System32\config\SYSTEM`
-	softwareHive := `C:\Windows\System32\config\SOFTWARE`
-	amcacheHive := `C:\Windows\appcompat\Programs\Amcache.hve`
-	securityLog := `C:\Windows\System32\winevt\Logs\Security.evtx`
-	systemLog := `C:\Windows\System32\winevt\Logs\System.evtx`
-	taskSchedLog := `C:\Windows\System32\winevt\Logs\Microsoft-Windows-TaskScheduler%4Operational.evtx`
+// Rutas en vivo de las fuentes que necesitan los colectores.
+const (
+	liveSystemHive   = `C:\Windows\System32\config\SYSTEM`
+	liveSoftwareHive = `C:\Windows\System32\config\SOFTWARE`
+	liveAmcacheHive  = `C:\Windows\appcompat\Programs\Amcache.hve`
+	liveSecurityLog  = `C:\Windows\System32\winevt\Logs\Security.evtx`
+	liveSystemLog    = `C:\Windows\System32\winevt\Logs\System.evtx`
+	liveTaskSchedLog = `C:\Windows\System32\winevt\Logs\Microsoft-Windows-TaskScheduler%4Operational.evtx`
+)
 
-	// Intentar un snapshot VSS para leer hives en uso; si falla, degradar a
-	// los paths en vivo (se registrará como colector con posible error).
-	if snap, err := vss.Create(`C:\`); err == nil {
-		defer snap.Close()
-		systemHive = vss.PathIn(snap, `Windows\System32\config\SYSTEM`)
-		softwareHive = vss.PathIn(snap, `Windows\System32\config\SOFTWARE`)
-		amcacheHive = vss.PathIn(snap, `Windows\appcompat\Programs\Amcache.hve`)
-		securityLog = vss.PathIn(snap, `Windows\System32\winevt\Logs\Security.evtx`)
-		systemLog = vss.PathIn(snap, `Windows\System32\winevt\Logs\System.evtx`)
-		taskSchedLog = vss.PathIn(snap, `Windows\System32\winevt\Logs\Microsoft-Windows-TaskScheduler%4Operational.evtx`)
+// hivePaths son las rutas desde las que los colectores van a leer los hives.
+type hivePaths struct {
+	system, software, amcache string
+}
+
+// RunLive arma los colectores reales y ejecuta el flujo completo con
+// consentimiento ya otorgado.
+//
+// Los hives del registro están tomados en exclusiva por el kernel. El camino
+// principal los copia por acceso raw NTFS a un directorio temporal
+// (lockedfile.Stage); si eso falla se intenta un snapshot VSS como antes, y
+// si tampoco, se pasan las rutas en vivo para que cada colector registre su
+// propio error. Los .evtx se leen en vivo: el servicio de Event Log los abre
+// compartiendo lectura.
+func RunLive(ctx context.Context, opts Options, up transport.Uploader) (report.Report, error) {
+	hives := hivePaths{system: liveSystemHive, software: liveSoftwareHive, amcache: liveAmcacheHive}
+
+	if stage, err := lockedfile.NewStage(); err == nil {
+		defer stage.Close()
+		if staged, ok := stageHives(stage); ok {
+			hives = staged
+		} else if snap, err := vss.Create(`C:\`); err == nil {
+			defer snap.Close()
+			hives = hivePaths{
+				system:   vss.PathIn(snap, `Windows\System32\config\SYSTEM`),
+				software: vss.PathIn(snap, `Windows\System32\config\SOFTWARE`),
+				amcache:  vss.PathIn(snap, `Windows\appcompat\Programs\Amcache.hve`),
+			}
+		}
 	}
 
 	collectors := []collector.Collector{
@@ -49,12 +69,29 @@ func RunLive(ctx context.Context, opts Options, up transport.Uploader) (report.R
 		usncol.New(),
 		mftcol.New(),
 		deletedcol.New(),
-		bam.New(systemHive),
-		shimcache.New(systemHive),
-		amcache.New(amcacheHive),
-		servicescol.New(systemHive),
-		schedulercol.New(`C:\Windows\System32\Tasks`, softwareHive),
-		eventlogcol.New(securityLog, systemLog, taskSchedLog, systemHive, softwareHive),
+		bam.New(hives.system),
+		shimcache.New(hives.system),
+		amcache.New(hives.amcache),
+		servicescol.New(hives.system),
+		schedulercol.New(`C:\Windows\System32\Tasks`, hives.software),
+		eventlogcol.New(liveSecurityLog, liveSystemLog, liveTaskSchedLog, hives.system, hives.software),
 	}
 	return runWithCollectors(ctx, opts, up, collectors, true)
+}
+
+// stageHives copia los tres hives al stage. Es todo o nada: mezclar un hive
+// copiado con uno del snapshot complica el diagnóstico sin ganar nada.
+func stageHives(stage *lockedfile.Stage) (hivePaths, bool) {
+	var out hivePaths
+	var err error
+	if out.system, err = stage.Copy(liveSystemHive); err != nil {
+		return hivePaths{}, false
+	}
+	if out.software, err = stage.Copy(liveSoftwareHive); err != nil {
+		return hivePaths{}, false
+	}
+	if out.amcache, err = stage.Copy(liveAmcacheHive); err != nil {
+		return hivePaths{}, false
+	}
+	return out, true
 }
