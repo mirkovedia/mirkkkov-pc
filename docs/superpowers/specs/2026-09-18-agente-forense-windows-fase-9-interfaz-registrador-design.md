@@ -88,6 +88,30 @@ dicen qué pasó y cómo seguir.
 - **Ningún manejador JS global puede llamarse igual que un binding de Go.** Hay un test que lo
   impide: el botón Cerrar estuvo roto por eso desde la Fase 6.
 
+## Revisión adversarial
+
+El rediseño pasó por una revisión multiagente antes de publicarse: cuatro lentes en paralelo
+(seguridad, lógica JS, CSS y accesibilidad, datos en Go) y, por cada lente, un verificador escéptico
+cuyo trabajo era **refutar** cada hallazgo leyendo el código. 22 confirmados y 1 refutado; agrupados,
+13 defectos. Los más serios no eran del rediseño: los destapó dibujar la actividad en el tiempo.
+
+| Defecto | Desde | Consecuencia |
+|---|---|---|
+| BAM, ShimCache y AmCache nunca escalaban por nombre: su `Source` es el hive | Fase 4 | Un `aimbot.exe` ejecutado y borrado quedaba en las tres fuentes que sobreviven al borrado y el veredicto salía `LIMPIO` |
+| El botón de carpeta podía ejecutar un archivo del revisado (`x.cmd\y`: el "padre" es un archivo) | Fase 6 | `explorer.exe <archivo>` lo abre con su asociación |
+| El botón de carpeta aceptaba rutas UNC | Fase 6 | Autenticación SMB/NTLM desde el proceso elevado hacia un host elegido por el revisado |
+| El timestomp se fechaba con `SI.Created`, el valor falsificado | Fase 3B-1 | El hallazgo anti-forense caía fuera del registro y del combo con el cambio de hora |
+| `scan_done` podía perderse si alguien arrastraba la ventana | Fase 6 | La pantalla quedaba en "Revisando" con el reporte ya escrito |
+| Ventana de 1100x780 fijos | Fase 6 | En 1366x768 o FHD al 150 % el botón Cancelar quedaba tras la barra de tareas |
+
+Del rediseño mismo: la tapa del registro compartía la clase `.reveal` con el botón de carpeta y
+medía 30x30, el HTML exportado omitía en silencio los hallazgos filtrados, las rutas largas
+escondían el nombre del archivo, los caracteres bidi de un nombre hostil se obedecían en vez de
+mostrarse, y el contraste del texto chico no llegaba a WCAG AA.
+
+Cada arreglo tiene su test, y el escaneo real del CI confirmó `LIMPIO` con la escalada por nombre ya
+activa sobre 474 entradas de ShimCache y 3996 de AmCache.
+
 ## Cómo verla sin compilar ni elevar
 
 ```bash

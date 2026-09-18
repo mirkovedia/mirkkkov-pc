@@ -93,6 +93,14 @@ jobs:
           for f in d["findings"]:
               if f["severity"] not in ("INFO", "LOW"):
                   print("  [%s] %s | %s" % (f["severity"], f["title"], f["artifact"]))
+          # La imagen del runner es una máquina limpia: si el veredicto deja de
+          # ser LIMPIO, lo más probable es un falso positivo nuevo. Se avisa sin
+          # romper el build, porque también puede haber cambiado la imagen.
+          if d["verdict"]["level"] != "LIMPIO":
+              print("::warning title=Escaneo real::El veredicto sobre el runner limpio es %s, no LIMPIO. Revisar falsos positivos." % d["verdict"]["level"])
+          failed = [c["name"] for c in d.get("collectors", []) if c.get("error")]
+          if failed:
+              print("::warning title=Escaneo real::Colectores con error en el runner: %s" % ", ".join(failed))
           PY
       - uses: actions/upload-artifact@v4
         with:

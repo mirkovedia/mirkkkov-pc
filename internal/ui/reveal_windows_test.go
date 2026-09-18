@@ -15,9 +15,11 @@ import (
 // HKCU\…\Run para que esa ruta llegue a un hallazgo con botón de carpeta.
 //
 // El test usa un .txt a propósito: si la regresión volviera, abriría un bloc
-// de notas en vez de ejecutar algo.
+// de notas en vez de ejecutar algo. Y un nombre neutro: con "aimbot-loader"
+// el escaneo real que corre después en el CI lo encontraba en el USN journal
+// del runner y lo reportaba como hallazgo (la detección funciona).
 func TestRevealNeverOpensAFileAsIfItWereAFolder(t *testing.T) {
-	file := filepath.Join(t.TempDir(), "aimbot-loader.txt")
+	file := filepath.Join(t.TempDir(), "archivo-del-revisado.txt")
 	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
