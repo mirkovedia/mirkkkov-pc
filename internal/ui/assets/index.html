@@ -115,15 +115,36 @@
       </div>
 
       <div class="verdict-note" id="verdict-note" hidden></div>
+
+      <!-- Contexto de la máquina: lo que hace falta para leer lo de abajo. -->
+      <div class="context" id="context" hidden></div>
+    </div>
+
+    <!-- Filtros: severidad, texto y orden. -->
+    <div class="filter-bar" id="filter-bar" hidden>
+      <div class="filter-chips" id="filter-chips"></div>
+      <input class="search" id="search" type="search" placeholder="Buscar en título, ruta o evidencia"
+             aria-label="Buscar hallazgos" oninput="onSearchInput(this)">
+      <select class="sort" id="sort" aria-label="Ordenar" onchange="onSortChange(this)">
+        <option value="severity">Por categoría y severidad</option>
+        <option value="time">Por fecha</option>
+      </select>
+      <span class="filter-count" id="filter-count"></span>
     </div>
 
     <div class="findings" id="findings"></div>
 
     <div class="results-footer">
       <span class="report-path" id="report-path"></span>
-      <button class="btn btn-ghost" onclick="closeApp()">Cerrar</button>
+      <span class="results-actions">
+        <button class="btn btn-ghost" id="copy-btn" onclick="copyReportPath()" hidden>Copiar ruta</button>
+        <button class="btn btn-ghost" onclick="onExportClick()">Exportar HTML</button>
+        <button class="btn btn-ghost" onclick="onCloseClick()">Cerrar</button>
+      </span>
     </div>
   </section>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 </main>
 
@@ -139,7 +160,7 @@
       <span class="statusbar-sep">·</span>
       <span id="progress-count">0 / 0</span>
       <span class="statusbar-pct" id="progress-pct">0%</span>
-      <button class="btn btn-ghost btn-small" id="cancel-btn" onclick="cancelScan()"
+      <button class="btn btn-ghost btn-small" id="cancel-btn" onclick="onCancelClick()"
               title="Detener el escaneo y guardar lo revisado hasta ahora">Cancelar</button>
     </span>
   </div>

@@ -43,6 +43,10 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* El atributo hidden pierde contra cualquier display: de autor (.wave y
+   .filter-bar son flex), así que sin esto un elemento "oculto" se ve igual. */
+[hidden] { display: none !important; }
+
 body {
   /* La retícula tenue evoca papel milimetrado: mide, no decora. Se
      mantiene al borde de lo perceptible a propósito. */
@@ -534,4 +538,97 @@ li.failed .c-icon { color: var(--sev-medium); }
   .scan-grid { grid-template-columns: 1fr; }
   .cols { grid-template-columns: 1fr; }
   .live-feed { height: 46vh; }
+}
+
+/* ---------------- Fase 8: contexto, filtros, evidencia ---------------- */
+.context {
+  padding: 14px 24px 18px; color: var(--text-dim); font-size: 11.5px;
+  font-family: var(--mono); letter-spacing: .2px;
+}
+
+.filter-bar {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
+  margin: 16px 0 10px;
+}
+.filter-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 9px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--border); background: transparent;
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .5px;
+  color: var(--text-faint); transition: all .15s;
+}
+.chip .chip-count { font-weight: 700; }
+.chip:disabled { opacity: .35; cursor: default; }
+.chip.on { color: var(--text); background: var(--bg-hi); border-color: var(--text-faint); }
+.chip.on.sev-critical { border-color: var(--sev-critical); }
+.chip.on.sev-high { border-color: var(--sev-high); }
+.chip.on.sev-medium { border-color: var(--sev-medium); }
+.chip.on.sev-low { border-color: var(--sev-low); }
+/* Los chips reutilizan las clases sev-* solo para el borde: el fondo lleno
+   de .badge no aplica acá. */
+.chip.sev-critical, .chip.sev-high, .chip.sev-medium, .chip.sev-low, .chip.sev-info { background: transparent; }
+.chip.on.sev-critical, .chip.on.sev-high, .chip.on.sev-medium, .chip.on.sev-low, .chip.on.sev-info { background: var(--bg-hi); color: var(--text); }
+
+.search, .sort {
+  background: var(--bg-elev); border: 1px solid var(--border); color: var(--text);
+  border-radius: 7px; padding: 6px 10px; font-family: inherit; font-size: 12.5px;
+}
+.search { flex: 1; min-width: 180px; }
+.search::placeholder { color: var(--text-faint); }
+.filter-count { color: var(--text-faint); font-size: 11.5px; font-family: var(--mono); margin-left: auto; }
+
+.finding { align-items: flex-start; flex-wrap: wrap; cursor: default; }
+.finding-main { cursor: pointer; }
+.finding-main:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.finding-meta {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
+  color: var(--text-faint); font-size: 11px; margin-top: 4px; font-family: var(--mono);
+}
+.sig {
+  padding: 1px 7px; border-radius: 3px; font-size: 10px; letter-spacing: .3px;
+  border: 1px solid var(--border);
+}
+.sig-signed { color: var(--ok); border-color: rgba(74,160,107,.4); }
+.sig-unsigned { color: var(--sev-medium); border-color: rgba(217,164,65,.5); }
+.sig-invalid { color: var(--sev-critical); border-color: rgba(214,69,69,.5); }
+
+.finding-evidence {
+  flex-basis: 100%; margin: 8px 0 2px 41px;
+  background: var(--bg); border: 1px solid var(--border-soft); border-radius: 7px;
+  padding: 8px 12px; overflow-x: auto;
+}
+.finding:not(.open) .finding-evidence { display: none; }
+.finding-evidence table { border-collapse: collapse; width: 100%; font-size: 11.5px; }
+.finding-evidence th {
+  text-align: left; color: var(--text-faint); font-weight: 500; font-family: var(--mono);
+  padding: 3px 14px 3px 0; white-space: nowrap; vertical-align: top; width: 1%;
+}
+.finding-evidence td { padding: 3px 0; font-family: var(--mono); word-break: break-all; }
+.finding-evidence pre { white-space: pre-wrap; word-break: break-all; font-size: 11.5px; margin: 0; }
+
+.day-sep {
+  padding: 8px 16px 4px; color: var(--text-faint); font-size: 10.5px;
+  font-family: var(--mono); letter-spacing: .6px; text-transform: uppercase;
+  border-top: 1px solid var(--border-soft);
+}
+
+.results-actions { display: flex; gap: 8px; }
+
+.toast {
+  position: fixed; left: 50%; bottom: 28px; transform: translate(-50%, 12px);
+  background: var(--bg-hi); border: 1px solid var(--border); color: var(--text);
+  padding: 9px 16px; border-radius: 8px; font-size: 12.5px;
+  opacity: 0; pointer-events: none; transition: all .2s;
+}
+.toast.on { opacity: 1; transform: translate(-50%, 0); }
+
+/* Copia exportada: todo desplegado, sin controles, fondo legible en papel. */
+body.exported { overflow: auto; height: auto; }
+body.exported .group-body, body.exported .finding-evidence { display: block !important; }
+body.exported .group-head { cursor: default; }
+body.exported .finding-main { cursor: default; }
+.export-stamp {
+  color: var(--text-faint); font-size: 11px; font-family: var(--mono);
+  padding: 0 0 14px; border-bottom: 1px solid var(--border); margin-bottom: 18px;
 }

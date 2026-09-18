@@ -13,3 +13,6 @@ salida.txt
 **/testdata/*.hve
 **/testdata/*.pf
 *.exe~
+
+# Vista previa de la interfaz (go run tools/previewui/main.go > preview.html)
+preview.html

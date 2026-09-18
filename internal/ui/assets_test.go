@@ -43,9 +43,22 @@ func TestPageExposesEventEntryPoint(t *testing.T) {
 // fallo es silencioso.
 func TestPageBindsBackendFunctions(t *testing.T) {
 	page := Page()
-	for _, fn := range []string{"window.startScan", "window.closeApp", "window.revealPath"} {
+	for _, fn := range []string{"window.startScan", "window.cancelScan", "window.closeApp", "window.revealPath", "window.exportHTML"} {
 		if !strings.Contains(page, fn) {
 			t.Errorf("la UI debe invocar %s", fn)
+		}
+	}
+}
+
+// TestPageDoesNotShadowBindings: una declaración global "function closeApp"
+// en el JS ES window.closeApp, así que pisa la función que Go expone con Bind
+// y el manejador termina llamándose a sí mismo. El botón Cerrar estuvo roto
+// por esto desde la Fase 6 sin que ningún test lo viera.
+func TestPageDoesNotShadowBindings(t *testing.T) {
+	page := Page()
+	for _, name := range []string{"startScan", "cancelScan", "closeApp", "revealPath", "exportHTML"} {
+		if strings.Contains(page, "function "+name+"(") {
+			t.Errorf("el JS declara function %s, que pisa el binding de Go del mismo nombre", name)
 		}
 	}
 }
